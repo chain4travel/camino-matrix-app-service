@@ -1,12 +1,13 @@
 package cmd
 
 import (
-	"camino-synapse-appservice/internal/app"
-	"camino-synapse-appservice/internal/config"
 	"context"
 	"log"
 	"os/signal"
 	"syscall"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/app"
+	"github.com/chain4travel/camino-synapse-app-service/internal/config"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -36,6 +37,7 @@ func Execute() error {
 				if err != nil {
 					log.Fatal(err)
 				}
+				_ = logger.Sync()
 				logger = zapLogger.Sugar()
 				defer func() { _ = logger.Sync() }()
 			}

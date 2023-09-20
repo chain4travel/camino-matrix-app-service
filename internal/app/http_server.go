@@ -1,11 +1,12 @@
 package app
 
 import (
-	"camino-synapse-appservice/internal/service"
 	"context"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/service"
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
@@ -14,11 +15,12 @@ import (
 	"maunium.net/go/mautrix/event"
 )
 
-func newServer(ctx context.Context, logger *zap.SugaredLogger, service *service.Service, hsAccessToken string) *server {
+func newServer(ctx context.Context, logger *zap.SugaredLogger, service *service.Service, hsAccessToken, port string) *server {
 	s := &server{
 		logger:  logger,
 		e:       echo.New(),
 		service: service,
+		port:    port,
 	}
 
 	s.e.HideBanner = true
@@ -38,10 +40,11 @@ type server struct {
 	logger  *zap.SugaredLogger
 	e       *echo.Echo
 	service *service.Service
+	port    string
 }
 
 func (s *server) Start(ctx context.Context) error {
-	return s.e.Start("localhost:5000")
+	return s.e.Start(":" + s.port)
 }
 
 func (s *server) Stop(ctx context.Context) error {

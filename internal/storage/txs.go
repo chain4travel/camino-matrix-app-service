@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"camino-synapse-appservice/internal/models"
+	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 
 	"github.com/ava-labs/avalanchego/database"
 	"github.com/ava-labs/avalanchego/ids"

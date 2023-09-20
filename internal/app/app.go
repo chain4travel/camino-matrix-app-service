@@ -1,13 +1,14 @@
 package app
 
 import (
-	"camino-synapse-appservice/internal/config"
-	"camino-synapse-appservice/internal/matrix"
-	"camino-synapse-appservice/internal/node"
-	"camino-synapse-appservice/internal/scheduler"
-	"camino-synapse-appservice/internal/service"
-	"camino-synapse-appservice/internal/storage"
 	"context"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/config"
+	"github.com/chain4travel/camino-synapse-app-service/internal/matrix"
+	"github.com/chain4travel/camino-synapse-app-service/internal/node"
+	"github.com/chain4travel/camino-synapse-app-service/internal/scheduler"
+	"github.com/chain4travel/camino-synapse-app-service/internal/service"
+	"github.com/chain4travel/camino-synapse-app-service/internal/storage"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -16,43 +17,42 @@ import (
 const caminoUserID = "@camino:localhost:8080" // TODO leave camino part, reconstruct the rest
 
 func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) (*app, error) {
+	app := &app{
+		logger: logger,
+		cfg:    cfg,
+	}
+
 	logger.Debug("Creating matrix client...")
 	matrixClient, err := matrix.NewClient(ctx, logger, cfg.MatrixHost, cfg.AccessToken, caminoUserID)
 	if err != nil {
-		return nil, err
+		return app, err
 	}
+	app.matrixClient = matrixClient
 
 	logger.Debug("Creating camino node client...")
 	nodeClient, err := node.NewClient(ctx, cfg.CaminoNodeHost, logger)
 	if err != nil {
-		return nil, err
+		return app, err
 	}
+	app.nodeClient = nodeClient
 
 	logger.Debug("Creating storage...")
 	storage, err := storage.New(ctx, logger, cfg.DBPath)
 	if err != nil {
-		return nil, err
+		return app, err
 	}
+	app.storage = storage
 
 	logger.Debug("Creating scheduler...")
-	scheduler := scheduler.New(ctx)
+	app.scheduler = scheduler.New(ctx)
 
 	logger.Debug("Creating service...")
-	service := service.New(ctx, logger, storage, nodeClient, matrixClient)
+	app.service = service.New(ctx, logger, storage, nodeClient, matrixClient)
 
 	logger.Debug("Creating HTTP server...")
-	httpServer := newServer(ctx, logger, service, cfg.MatrixAccessToken)
+	app.httpServer = newServer(ctx, logger, app.service, cfg.MatrixAccessToken, cfg.HTTPPort)
 
-	return &app{
-		logger:       logger,
-		cfg:          cfg,
-		matrixClient: matrixClient,
-		nodeClient:   nodeClient,
-		httpServer:   httpServer,
-		service:      service,
-		scheduler:    scheduler,
-		storage:      storage,
-	}, nil
+	return app, nil
 }
 
 type app struct {
@@ -124,20 +124,26 @@ func (app *app) Run(ctx context.Context) {
 func (app *app) Close(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		app.logger.Debug("Stopping HTTP server...")
-		return app.httpServer.Stop(ctx)
-	})
+	if app.httpServer != nil {
+		g.Go(func() error {
+			app.logger.Debug("Stopping HTTP server...")
+			return app.httpServer.Stop(ctx)
+		})
+	}
 
-	g.Go(func() error {
-		app.logger.Debug("Stopping scheduler...")
-		return app.scheduler.Stop(ctx)
-	})
+	if app.scheduler != nil {
+		g.Go(func() error {
+			app.logger.Debug("Stopping scheduler...")
+			return app.scheduler.Stop(ctx)
+		})
+	}
 
-	g.Go(func() error {
-		app.logger.Debug("Closing storage...")
-		return app.storage.Close(ctx)
-	})
+	if app.storage != nil {
+		g.Go(func() error {
+			app.logger.Debug("Closing storage...")
+			return app.storage.Close(ctx)
+		})
+	}
 
 	if err := g.Wait(); err != nil {
 		app.logger.Error(err)

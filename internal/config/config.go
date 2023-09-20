@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	configFileName = "camino-synapse-appservice"
+	configFileName = "camino-synapse-app-service"
 
 	configFlagKey = "config"
 

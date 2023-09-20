@@ -1,8 +1,9 @@
 package node
 
 import (
-	"camino-synapse-appservice/internal/models"
 	"context"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"

@@ -1,11 +1,12 @@
 package matrix
 
 import (
-	"camino-synapse-appservice/internal/models"
 	"context"
 	"errors"
 	"fmt"
 	"reflect"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"

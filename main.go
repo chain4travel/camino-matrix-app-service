@@ -1,8 +1,9 @@
 package main
 
 import (
-	"camino-synapse-appservice/cmd"
 	"log"
+
+	"github.com/chain4travel/camino-synapse-app-service/cmd"
 )
 
 // ! appservice will not process events that happend while app-service wasn't running
@@ -18,3 +19,5 @@ func main() {
 		log.Fatalln(err)
 	}
 }
+
+// TODO rename trio to chequebook

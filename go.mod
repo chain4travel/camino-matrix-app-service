@@ -1,4 +1,4 @@
-module camino-synapse-appservice
+module github.com/chain4travel/camino-synapse-app-service
 
 go 1.19
 

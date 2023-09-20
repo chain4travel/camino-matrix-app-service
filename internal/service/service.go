@@ -1,10 +1,11 @@
 package service
 
 import (
-	"camino-synapse-appservice/internal/matrix"
-	"camino-synapse-appservice/internal/node"
-	"camino-synapse-appservice/internal/storage"
 	"context"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/matrix"
+	"github.com/chain4travel/camino-synapse-app-service/internal/node"
+	"github.com/chain4travel/camino-synapse-app-service/internal/storage"
 
 	"github.com/ava-labs/avalanchego/vms/touristicvm/status"
 	"go.uber.org/zap"
