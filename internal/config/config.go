@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -25,7 +26,7 @@ const (
 	dbPathKey               = "db_path"
 )
 
-func BindFlags(cmd *cobra.Command) {
+func BindFlags(cmd *cobra.Command) error {
 	cmd.PersistentFlags().String(configFlagKey, ".", "path to config file dir")
 
 	cmd.PersistentFlags().String(cashOutPeriodKey, ".", "cashout_period")
@@ -38,17 +39,21 @@ func BindFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String(logLevelKey, ".", "log_level")
 	cmd.PersistentFlags().String(dbPathKey, ".", "db_path")
 
-	viper.BindPFlag(configFlagKey, cmd.PersistentFlags().Lookup(configFlagKey))
+	errs := wrappers.Errs{}
+	errs.Add(
+		viper.BindPFlag(configFlagKey, cmd.PersistentFlags().Lookup(configFlagKey)),
 
-	viper.BindPFlag(cashOutPeriodKey, cmd.PersistentFlags().Lookup(cashOutPeriodKey))
-	viper.BindPFlag(cashOutTxCheckPeriodKey, cmd.PersistentFlags().Lookup(cashOutTxCheckPeriodKey))
-	viper.BindPFlag(caminoNodeHostKey, cmd.PersistentFlags().Lookup(caminoNodeHostKey))
-	viper.BindPFlag(matrixHostKey, cmd.PersistentFlags().Lookup(matrixHostKey))
-	viper.BindPFlag(httPortKey, cmd.PersistentFlags().Lookup(httPortKey))
-	viper.BindPFlag(accessTokenKey, cmd.PersistentFlags().Lookup(accessTokenKey))
-	viper.BindPFlag(matrixAccessTokenKey, cmd.PersistentFlags().Lookup(matrixAccessTokenKey))
-	viper.BindPFlag(logLevelKey, cmd.PersistentFlags().Lookup(logLevelKey))
-	viper.BindPFlag(dbPathKey, cmd.PersistentFlags().Lookup(dbPathKey))
+		viper.BindPFlag(cashOutPeriodKey, cmd.PersistentFlags().Lookup(cashOutPeriodKey)),
+		viper.BindPFlag(cashOutTxCheckPeriodKey, cmd.PersistentFlags().Lookup(cashOutTxCheckPeriodKey)),
+		viper.BindPFlag(caminoNodeHostKey, cmd.PersistentFlags().Lookup(caminoNodeHostKey)),
+		viper.BindPFlag(matrixHostKey, cmd.PersistentFlags().Lookup(matrixHostKey)),
+		viper.BindPFlag(httPortKey, cmd.PersistentFlags().Lookup(httPortKey)),
+		viper.BindPFlag(accessTokenKey, cmd.PersistentFlags().Lookup(accessTokenKey)),
+		viper.BindPFlag(matrixAccessTokenKey, cmd.PersistentFlags().Lookup(matrixAccessTokenKey)),
+		viper.BindPFlag(logLevelKey, cmd.PersistentFlags().Lookup(logLevelKey)),
+		viper.BindPFlag(dbPathKey, cmd.PersistentFlags().Lookup(dbPathKey)),
+	)
+	return errs.Err
 }
 
 type Config struct {

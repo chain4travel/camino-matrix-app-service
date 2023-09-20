@@ -51,6 +51,8 @@ func Execute() error {
 			app.Run(ctx)
 		},
 	}
-	config.BindFlags(rootCmd)
+	if err := config.BindFlags(rootCmd); err != nil {
+		return err
+	}
 	return rootCmd.Execute()
 }
