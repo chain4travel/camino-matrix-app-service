@@ -11,10 +11,11 @@ RUN go build -o build/
 ###
 ### Stage 1: runtime
 ###
-FROM debian:11-slim
+FROM alpine:3.16
+
+RUN apk add libc6-compat
 
 WORKDIR /camino-synapse-app-service
 COPY --from=builder /camino-synapse-app-service/build/ .
-# EXPOSE 5000
 
 ENTRYPOINT [ "./camino-synapse-app-service" ]
