@@ -14,7 +14,7 @@ import (
 
 var emptyChequeRecord = &ChequeRecord{Credential: &secp256k1fx.Credential{}}
 
-type Trio struct {
+type Chequebook struct {
 	Agent            ids.ShortID  `serialize:"true"`
 	Issuer           ids.ShortID  `serialize:"true"`
 	Beneficiary      ids.ShortID  `serialize:"true"`
@@ -23,11 +23,11 @@ type Trio struct {
 	LastCashedOut    ChequeRecord `serialize:"true"`
 }
 
-func (t *Trio) IsCashedOut() bool {
+func (t *Chequebook) IsCashedOut() bool {
 	return t.LastAdded.Equal(&t.LastCashedOut)
 }
 
-func (t *Trio) LastAddedCheque() *SignedCheque {
+func (t *Chequebook) LastAddedCheque() *SignedCheque {
 	return &SignedCheque{
 		Cheque: tTxs.Cheque{
 			Agent:       t.Agent,
@@ -91,12 +91,12 @@ func (ch *SignedCheque) IsNewerThan(old *ChequeRecord) bool {
 	return old == nil || old == emptyChequeRecord || old.SerialID < ch.SerialID
 }
 
-func (ch *SignedCheque) TrioID() string {
+func (ch *SignedCheque) ChequebookID() string {
 	return ch.Issuer.String() + ch.Beneficiary.String() + ch.Agent.String()
 }
 
-func (ch *SignedCheque) Trio() *Trio {
-	return &Trio{
+func (ch *SignedCheque) Chequebook() *Chequebook {
+	return &Chequebook{
 		Issuer:           ch.Issuer,
 		Agent:            ch.Agent,
 		Beneficiary:      ch.Beneficiary,

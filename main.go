@@ -19,5 +19,3 @@ func main() {
 		log.Fatalln(err)
 	}
 }
-
-// TODO rename trio to chequebook

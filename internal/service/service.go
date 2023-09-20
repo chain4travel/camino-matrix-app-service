@@ -75,19 +75,19 @@ func (s *Service) CashOut() {
 	defer s.storage.Abort()
 	s.logger.Debugf("Issuing cashOutTxs...")
 
-	it := s.storage.GetTriosIterator()
+	it := s.storage.GetChequebooksIterator()
 	defer it.Release()
 	for it.Next() {
-		trio, err := it.Value()
+		chequebook, err := it.Value()
 		if err != nil {
 			s.logger.Error(err)
 			continue
 		}
-		if trio.IsCashedOut() {
+		if chequebook.IsCashedOut() {
 			continue
 		}
 
-		cheque := trio.LastAddedCheque()
+		cheque := chequebook.LastAddedCheque()
 		s.logger.Debugf("Cashing out cheque %s ...", cheque)
 
 		txID, err := s.nodeClient.CashOutTx(cheque)

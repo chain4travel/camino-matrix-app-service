@@ -7,7 +7,7 @@ import (
 )
 
 func (s *Service) GetLastAddedChequeRecord(cheque *models.SignedCheque) (*models.ChequeRecord, error) {
-	trio, err := s.storage.GetTrio(cheque.TrioID())
+	chequebook, err := s.storage.GetChequebook(cheque.ChequebookID())
 	switch {
 	case err == database.ErrNotFound:
 		return nil, nil
@@ -15,49 +15,49 @@ func (s *Service) GetLastAddedChequeRecord(cheque *models.SignedCheque) (*models
 		s.logger.Error(err)
 		return nil, err
 	}
-	return &trio.LastAdded, nil
+	return &chequebook.LastAdded, nil
 }
 
 func (s *Service) AddCheque(cheque *models.SignedCheque) error {
-	trioID := cheque.TrioID()
-	trio, err := s.storage.GetTrio(trioID)
+	chequebookID := cheque.ChequebookID()
+	chequebook, err := s.storage.GetChequebook(chequebookID)
 	switch {
 	case err == database.ErrNotFound:
-		trio = cheque.Trio()
+		chequebook = cheque.Chequebook()
 	case err != nil:
 		s.logger.Error(err)
 		return err
 	}
-	trio.LastAdded = cheque.ChequeRecord()
-	return s.storage.SetTrio(trioID, trio)
+	chequebook.LastAdded = cheque.ChequeRecord()
+	return s.storage.SetChequebook(chequebookID, chequebook)
 }
 
 func (s *Service) SetChequeIssuedWithTx(cheque *models.SignedCheque) error {
-	trioID := cheque.TrioID()
-	trio, err := s.storage.GetTrio(trioID)
+	chequebookID := cheque.ChequebookID()
+	chequebook, err := s.storage.GetChequebook(chequebookID)
 	if err != nil {
 		s.logger.Error(err)
 		return err
 	}
 
-	if cheque.IsNewerThan(&trio.LastIssuedWithTx) {
-		trio.LastIssuedWithTx = cheque.ChequeRecord()
+	if cheque.IsNewerThan(&chequebook.LastIssuedWithTx) {
+		chequebook.LastIssuedWithTx = cheque.ChequeRecord()
 	}
 
-	return s.storage.SetTrio(trioID, trio)
+	return s.storage.SetChequebook(chequebookID, chequebook)
 }
 
 func (s *Service) AddSuccessfulCashOut(cheque *models.SignedCheque) error {
-	trioID := cheque.TrioID()
-	trio, err := s.storage.GetTrio(trioID)
+	chequebookID := cheque.ChequebookID()
+	chequebook, err := s.storage.GetChequebook(chequebookID)
 	if err != nil {
 		s.logger.Error(err)
 		return err
 	}
 
-	if cheque.IsNewerThan(&trio.LastCashedOut) {
-		trio.LastCashedOut = cheque.ChequeRecord()
+	if cheque.IsNewerThan(&chequebook.LastCashedOut) {
+		chequebook.LastCashedOut = cheque.ChequeRecord()
 	}
 
-	return s.storage.SetTrio(trioID, trio)
+	return s.storage.SetChequebook(chequebookID, chequebook)
 }

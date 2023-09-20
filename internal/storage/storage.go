@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	chequeRecordsPrefix = "chequeRecords"
-	chequeTxsPrefix     = "chequeTxs"
+	chequebooksPrefix = "chequebooks"
+	chequeTxsPrefix   = "chequeTxs"
 )
 
 var _ Storage = (*storage)(nil)
@@ -26,9 +26,9 @@ type Storage interface {
 	Abort()
 	Close(ctx context.Context) error
 
-	GetTrio(trioID string) (*models.Trio, error)
-	SetTrio(trioID string, record *models.Trio) error
-	GetTriosIterator() ChequeTriosIterator
+	GetChequebook(chequebookID string) (*models.Chequebook, error)
+	SetChequebook(chequebookID string, record *models.Chequebook) error
+	GetChequebooksIterator() ChequebooksIterator
 
 	RemoveChequeTx(txID ids.ID) error
 	AddChequeTx(txID ids.ID, cheque *models.SignedCheque) error
@@ -43,20 +43,20 @@ func New(ctx context.Context, logger *zap.SugaredLogger, path string) (Storage, 
 	}
 	rootDB := versiondb.New(db)
 	return &storage{
-		logger:      logger,
-		db:          db,
-		rootDB:      rootDB,
-		chequesDB:   prefixdb.New([]byte(chequeRecordsPrefix), rootDB),
-		chequeTxsDB: prefixdb.New([]byte(chequeTxsPrefix), rootDB),
+		logger:        logger,
+		db:            db,
+		rootDB:        rootDB,
+		chequebooksDB: prefixdb.New([]byte(chequebooksPrefix), rootDB),
+		chequeTxsDB:   prefixdb.New([]byte(chequeTxsPrefix), rootDB),
 	}, nil
 }
 
 type storage struct {
-	logger      *zap.SugaredLogger
-	db          database.Database
-	rootDB      *versiondb.Database
-	chequesDB   database.Database
-	chequeTxsDB database.Database
+	logger        *zap.SugaredLogger
+	db            database.Database
+	rootDB        *versiondb.Database
+	chequebooksDB database.Database
+	chequeTxsDB   database.Database
 
 	comitted bool
 	lock     sync.Mutex
@@ -95,7 +95,7 @@ func (s *storage) Close(ctx context.Context) error {
 		s.logger.Error(err)
 		return err
 	}
-	if err := s.chequesDB.Close(); err != nil {
+	if err := s.chequebooksDB.Close(); err != nil {
 		s.logger.Error(err)
 		return err
 	}
