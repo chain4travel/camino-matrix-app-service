@@ -64,7 +64,7 @@ func (s *server) putTransactions(c echo.Context) error {
 		return err
 	}
 
-	if err := s.service.ProcessEvents(reqBody.Events, c.Param("txnId")); err != nil {
+	if err := s.service.ProcessEvents(c.Request().Context(), reqBody.Events, c.Param("txnId")); err != nil {
 		return err
 	}
 

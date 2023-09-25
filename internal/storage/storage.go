@@ -2,88 +2,120 @@ package storage
 
 import (
 	"context"
-	"sync"
+	"database/sql"
+	"errors"
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/models"
-
-	"github.com/ava-labs/avalanchego/database"
-	"github.com/ava-labs/avalanchego/database/prefixdb"
-	"github.com/ava-labs/avalanchego/database/versiondb"
-	"github.com/ava-labs/avalanchego/ids"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/sqlite3"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
-const (
-	chequebooksPrefix = "chequebooks"
-	chequeTxsPrefix   = "chequeTxs"
+var (
+	_ Storage = (*storage)(nil)
+
+	ErrNotFound = errors.New("not found")
 )
 
-var _ Storage = (*storage)(nil)
-
 type Storage interface {
-	NewSession()
-	Commit() error
-	Abort()
+	NewSession(ctx context.Context) (Session, error)
 	Close(ctx context.Context) error
-
-	GetChequebook(chequebookID string) (*models.Chequebook, error)
-	SetChequebook(chequebookID string, record *models.Chequebook) error
-	GetChequebooksIterator() ChequebooksIterator
-
-	RemoveChequeTx(txID ids.ID) error
-	AddChequeTx(txID ids.ID, cheque *models.SignedCheque) error
-	GetChequeTxsIterator() ChequeTxsIterator
 }
 
-func New(ctx context.Context, logger *zap.SugaredLogger, path string) (Storage, error) {
-	db, err := newDatabase(path)
+type Session interface {
+	Commit() error
+	Abort()
+
+	GetCheque(ctx context.Context, chequebookID string) (*models.Cheque, error)
+	AddCheque(ctx context.Context, cheque *models.Cheque) error
+	UpdateCheque(ctx context.Context, cheque *models.Cheque) error
+	GetNotCashedCheques(ctx context.Context) ([]models.Cheque, error)
+}
+
+func New(ctx context.Context, logger *zap.SugaredLogger, dbPath, dbName, migrationsPath string) (Storage, error) {
+	db, err := sqlx.Open("sqlite3", dbPath)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
 	}
-	rootDB := versiondb.New(db)
-	return &storage{
-		logger:        logger,
-		db:            db,
-		rootDB:        rootDB,
-		chequebooksDB: prefixdb.New([]byte(chequebooksPrefix), rootDB),
-		chequeTxsDB:   prefixdb.New([]byte(chequeTxsPrefix), rootDB),
-	}, nil
+
+	s := &storage{
+		logger: logger,
+		db:     db,
+	}
+
+	if err := s.migrate(ctx, dbName, migrationsPath); err != nil {
+		return nil, err
+	}
+
+	if err := s.prepare(ctx); err != nil {
+		return nil, err
+	}
+
+	return s, nil
 }
 
 type storage struct {
-	logger        *zap.SugaredLogger
-	db            database.Database
-	rootDB        *versiondb.Database
-	chequebooksDB database.Database
-	chequeTxsDB   database.Database
+	logger *zap.SugaredLogger
+	db     *sqlx.DB
 
-	comitted bool
-	lock     sync.Mutex
+	getChequeByID, getNotCashedCheques *sqlx.Stmt
+	addCheque, updateCheque            *sqlx.NamedStmt
 }
 
-func (s *storage) NewSession() {
-	// cause leveldb batch doesn't lock data, data could become inconsistent, so we do lock
-	s.lock.Lock()
-}
+func (s *storage) migrate(ctx context.Context, dbName, migrationsPath string) error {
+	s.logger.Infof("Performing db migrations...")
 
-func (s *storage) Commit() error {
-	if err := s.rootDB.Commit(); err != nil {
+	driver, err := sqlite3.WithInstance(s.db.DB, &sqlite3.Config{})
+	if err != nil {
 		s.logger.Error(err)
-		s.rootDB.Abort()
 		return err
 	}
-	s.comitted = true
-	s.lock.Unlock()
+
+	migration, err := migrate.NewWithDatabaseInstance(migrationsPath, dbName, driver)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+
+	version, dirty, err := migration.Version()
+	if err != nil && err != migrate.ErrNilVersion {
+		s.logger.Error(err)
+		return err
+	}
+	if dirty {
+		return errors.New("database in dirty state after previous migration, requires manual fixing")
+	}
+	s.logger.Infof("Migration version: %d", version)
+
+	err = migration.Up()
+	switch {
+	case err == migrate.ErrNoChange:
+		s.logger.Infof("No migrations needed")
+	case err != nil:
+		s.logger.Error(err)
+		return err
+	default:
+		newVersion, dirty, err := migration.Version()
+		if err != nil && err != migrate.ErrNilVersion {
+			s.logger.Error(err)
+			return err
+		}
+		if dirty {
+			return errors.New("database in dirty state after previous migration, requires manual fixing")
+		}
+		s.logger.Infof("New migration version: %d", newVersion)
+	}
+
+	s.logger.Infof("Finished preforming db migrations")
 	return nil
 }
 
-func (s *storage) Abort() {
-	s.rootDB.Abort()
-	if s.comitted {
-		return
-	}
-	s.lock.Unlock()
+func (s *storage) prepare(ctx context.Context) error {
+	return s.prepareChequesStmts(ctx)
 }
 
 func (s *storage) Close(ctx context.Context) error {
@@ -91,17 +123,51 @@ func (s *storage) Close(ctx context.Context) error {
 		s.logger.Error(err)
 		return err
 	}
-	if err := s.rootDB.Close(); err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	if err := s.chequebooksDB.Close(); err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	if err := s.chequeTxsDB.Close(); err != nil {
-		s.logger.Error(err)
-		return err
-	}
 	return nil
+}
+
+func (s *storage) NewSession(ctx context.Context) (Session, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		s.logger.Error(err)
+		return nil, err
+	}
+	return &session{tx: tx, logger: s.logger, storage: s}, nil
+}
+
+type session struct {
+	storage  *storage
+	logger   *zap.SugaredLogger
+	tx       *sqlx.Tx
+	commited bool
+}
+
+func (s *session) Commit() error {
+	if s.commited {
+		return errors.New("already commited")
+	}
+	if err := s.tx.Commit(); err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	s.commited = true
+	return nil
+}
+
+func (s *session) Abort() {
+	if s.commited {
+		return
+	}
+	if err := s.tx.Rollback(); err != nil {
+		s.logger.Error(err)
+	}
+}
+
+func upgradeError(err error) error {
+	switch err {
+	case sql.ErrNoRows:
+		return ErrNotFound
+	default:
+		return err
+	}
 }

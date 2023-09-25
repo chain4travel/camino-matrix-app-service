@@ -21,7 +21,7 @@ import (
 var _ Client = (*client)(nil)
 
 type Client interface {
-	CashOutTx(cheque *models.SignedCheque) (ids.ID, error)
+	CashOutTx(cheque *models.Cheque) (ids.ID, error)
 	GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error)
 }
 
@@ -63,7 +63,7 @@ type client struct {
 	hrp       string
 }
 
-func (c *client) CashOutTx(cheque *models.SignedCheque) (ids.ID, error) {
+func (c *client) CashOutTx(cheque *models.Cheque) (ids.ID, error) {
 	c.logger.Debug("Creating cashOutTx...")
 	c.logger.Debug("Requesting T-chain SpendWithWrapper...")
 	ins, outs, _, _, err := c.T.SpendWithWrapper(
@@ -89,12 +89,10 @@ func (c *client) CashOutTx(cheque *models.SignedCheque) (ids.ID, error) {
 		}},
 		Cheque: tTxs.SignedCheque{
 			Cheque: cheque.Cheque,
-			Auth:   cheque.Credential,
+			Auth:   cheque.Credential(),
 		},
 	}
 
-	avax.SortTransferableInputs(utx.Ins)
-	avax.SortTransferableOutputs(utx.Outs, tTxs.Codec)
 	tx, err := tTxs.NewSigned(utx, tTxs.Codec, nil)
 	if err != nil {
 		c.logger.Error(err)
@@ -130,11 +128,12 @@ func (c *client) CashOutTx(cheque *models.SignedCheque) (ids.ID, error) {
 }
 
 func (c *client) GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error) {
-	c.logger.Debugf("GetTxStatus %s", txID)
+	c.logger.Debugf("Getting status of tx %s", txID)
 	resp, err := c.T.GetTxStatus(context.Background(), txID)
 	if err != nil {
 		c.logger.Error(err)
 		return tStatus.Unknown, "", err
 	}
+	c.logger.Debugf("Tx %s status: %s (%s)", txID, resp.Status, resp.Reason)
 	return resp.Status, resp.Reason, nil
 }

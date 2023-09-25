@@ -37,7 +37,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	app.nodeClient = nodeClient
 
 	logger.Debug("Creating storage...")
-	storage, err := storage.New(ctx, logger, cfg.DBPath)
+	storage, err := storage.New(ctx, logger, cfg.DBPath, cfg.DBName, cfg.MigrationsPath)
 	if err != nil {
 		return app, err
 	}
@@ -72,13 +72,8 @@ func (app *app) Run(ctx context.Context) {
 	// run
 
 	g.Go(func() error {
-		app.logger.Debug("Scheduling cashOutTxs-issuing...")
+		app.logger.Debug("Scheduling cash-out...")
 		if err := app.scheduler.Shedule(app.cfg.CashOutPeriod, app.service.CashOut); err != nil {
-			app.logger.Error(err)
-			return err
-		}
-		app.logger.Debug("Scheduling cashOutTxs-checking...")
-		if err := app.scheduler.Shedule(app.cfg.CashOutTxCheckPeriod, app.service.CheckCashOutTxs); err != nil {
 			app.logger.Error(err)
 			return err
 		}

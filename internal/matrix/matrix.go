@@ -11,8 +11,7 @@ import (
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
 	"github.com/ava-labs/avalanchego/utils/formatting"
-	"github.com/ava-labs/avalanchego/vms/secp256k1fx"
-	tTxs "github.com/ava-labs/avalanchego/vms/touristicvm/txs"
+	"github.com/ava-labs/avalanchego/vms/touristicvm/txs"
 	"go.uber.org/zap"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -43,7 +42,7 @@ type c4tMessageEventContent struct {
 }
 
 type Client interface {
-	GetC4TMessageCheques(evnt event.Event) ([]models.SignedCheque, error)
+	GetC4TMessageCheques(evnt event.Event) ([]models.Cheque, error)
 }
 
 func NewClient(ctx context.Context, logger *zap.SugaredLogger, homeserver, accessToken, userID string) (Client, error) {
@@ -63,7 +62,7 @@ type client struct {
 	matrix *mautrix.Client
 }
 
-func (c *client) GetC4TMessageCheques(evnt event.Event) ([]models.SignedCheque, error) {
+func (c *client) GetC4TMessageCheques(evnt event.Event) ([]models.Cheque, error) {
 	if evnt.Type.Type != c4tMessageType {
 		err := fmt.Errorf("wrong event type: expected %s, but got %s", c4tMessageType, evnt.Type.Type)
 		c.logger.Error(err)
@@ -82,8 +81,8 @@ func (c *client) GetC4TMessageCheques(evnt event.Event) ([]models.SignedCheque, 
 	return c.signedCheques(msg.Cheques)
 }
 
-func (c *client) signedCheques(cheques []cheque) ([]models.SignedCheque, error) {
-	signedCheques := make([]models.SignedCheque, len(cheques))
+func (c *client) signedCheques(cheques []cheque) ([]models.Cheque, error) {
+	signedCheques := make([]models.Cheque, len(cheques))
 	for i, cheque := range cheques {
 		signature, err := formatting.Decode(formatting.Hex, string(cheque.Signature))
 		if err != nil {
@@ -97,19 +96,17 @@ func (c *client) signedCheques(cheques []cheque) ([]models.SignedCheque, error) 
 			return nil, err
 		}
 
-		signedCheques[i] = models.SignedCheque{
-			Cheque: tTxs.Cheque{
+		signedCheques[i] = models.Cheque{
+			ChequebookID: cheque.Issuer.String() + cheque.Beneficiary.String() + cheque.Agent.String(),
+			Cheque: txs.Cheque{
 				Issuer:      cheque.Issuer,
 				Agent:       cheque.Agent,
 				Beneficiary: cheque.Beneficiary,
 				Amount:      cheque.Amount,
 				SerialID:    cheque.SerialID,
 			},
-			Credential: &secp256k1fx.Credential{
-				Sigs: make([][secp256k1.SignatureLen]byte, 1),
-			},
 		}
-		copy(signedCheques[i].Credential.Sigs[0][:], signature)
+		copy(signedCheques[i].Signature[:], signature)
 	}
 	return signedCheques, nil
 }

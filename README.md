@@ -34,11 +34,13 @@ See `camino-synapse-app-service.yaml.example`:
 ```yaml
 cashout_period: 30s
 cashout_tx_check_period: 5s
-camino_node_host: "http://localhost:19651"
-matrix_host: "http://localhost:8008"
+camino_node_host: http://localhost:19651
+matrix_host: http://localhost:8008
 http_port: 5000
 access_token: wfghWEGh3wgWHEf3478sHFWE
 matrix_access_token: ugw8243igya57aaABGFfgeyu
 log_level: debug # debug or info
-db_path: db
+db_path: db.db
+db_name: camino_synapse_app_service
+migrations_path: file://./migrations # schema is mandatory!
 ```
