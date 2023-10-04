@@ -1,5 +1,4 @@
 cashout_period: 30s
-cashout_tx_check_period: 5s
 camino_node_host: http://localhost:19651
 matrix_host: http://localhost:8008
 http_port: 5000

@@ -73,7 +73,7 @@ func (app *app) Run(ctx context.Context) {
 
 	g.Go(func() error {
 		app.logger.Debug("Scheduling cash-out...")
-		if err := app.scheduler.Shedule(app.cfg.CashOutPeriod, app.service.CashOut); err != nil {
+		if err := app.scheduler.Schedule(app.cfg.CashOutPeriod, app.service.CashOut); err != nil {
 			app.logger.Error(err)
 			return err
 		}

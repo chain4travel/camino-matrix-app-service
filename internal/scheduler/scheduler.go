@@ -12,7 +12,7 @@ var _ Scheduler = (*scheduler)(nil)
 type Scheduler interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
-	Shedule(period time.Duration, job func()) error
+	Schedule(period time.Duration, job func()) error
 }
 
 func New(ctx context.Context) Scheduler {
@@ -33,7 +33,7 @@ func (s *scheduler) Stop(ctx context.Context) error {
 	return nil
 }
 
-func (s *scheduler) Shedule(period time.Duration, job func()) error {
+func (s *scheduler) Schedule(period time.Duration, job func()) error {
 	_, err := s.Every(period).Do(job)
 	return err
 }

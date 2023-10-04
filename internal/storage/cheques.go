@@ -79,12 +79,13 @@ func (s *session) GetNotCashedCheques(ctx context.Context) ([]models.Cheque, err
 	for rows.Next() {
 		cheque := &cheque{}
 		if err := rows.StructScan(cheque); err != nil {
-			s.logger.Error(err)
-			return nil, upgradeError(err)
+			s.logger.Errorf("failed to get not cashed cheque from db: %v", err)
+			continue
 		}
 		model, err := s.storage.modelFromCheque(cheque)
 		if err != nil {
-			return nil, err
+			s.logger.Errorf("failed to parse not cashed cheque: %v", err)
+			continue
 		}
 		cheques = append(cheques, *model)
 	}
