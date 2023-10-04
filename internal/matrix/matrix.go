@@ -84,7 +84,7 @@ func (c *client) GetC4TMessageCheques(evnt event.Event) ([]models.Cheque, error)
 func (c *client) signedCheques(cheques []cheque) ([]models.Cheque, error) {
 	signedCheques := make([]models.Cheque, len(cheques))
 	for i, cheque := range cheques {
-		signature, err := formatting.Decode(formatting.Hex, string(cheque.Signature))
+		signature, err := formatting.Decode(formatting.Hex, cheque.Signature)
 		if err != nil {
 			err := fmt.Errorf("failed to decode cheque signature from hex: %v", err)
 			c.logger.Error(err)
