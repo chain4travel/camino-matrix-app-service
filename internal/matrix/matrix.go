@@ -94,9 +94,14 @@ func (c *client) signedCheques(cheques []cheque) ([]models.Cheque, error) {
 	for i, cheque := range cheques {
 		signature, err := formatting.Decode(formatting.Hex, cheque.Signature)
 		if err != nil {
-			err := fmt.Errorf("failed to decode cheque signature from hex: %v", err)
-			c.logger.Error(err)
-			return nil, err
+			c.logger.Debugf("failed to decode cheque signature from hex: %v", err)
+			c.logger.Debugf("Prefixing encoded signature with 0x")
+			signature, err = formatting.Decode(formatting.Hex, "0x"+cheque.Signature)
+			if err != nil {
+				err := fmt.Errorf("failed to decode prefixed cheque signature from hex: %v", err)
+				c.logger.Error(err)
+				return nil, err
+			}
 		}
 		if len(signature) != secp256k1.SignatureLen {
 			err := fmt.Errorf("wrong cheque signature len: expected %d, but got %d", secp256k1.SignatureLen, len(signature))
