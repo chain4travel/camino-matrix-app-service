@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"reflect"
@@ -98,9 +99,14 @@ func (c *client) signedCheques(cheques []cheque) ([]models.Cheque, error) {
 			c.logger.Debugf("Prefixing encoded signature with 0x")
 			signature, err = formatting.Decode(formatting.Hex, "0x"+cheque.Signature)
 			if err != nil {
-				err := fmt.Errorf("failed to decode prefixed cheque signature from hex: %v", err)
-				c.logger.Error(err)
-				return nil, err
+				c.logger.Debugf("failed to decode prefixed cheque signature from hex: %v", err)
+				c.logger.Debugf("Using different decoding method")
+				signature, err = hex.DecodeString(cheque.Signature)
+				if err != nil {
+					err := fmt.Errorf("failed to decode (with different methods) cheque signature from hex: %v", err)
+					c.logger.Error(err)
+					return nil, err
+				}
 			}
 		}
 		if len(signature) != secp256k1.SignatureLen {
