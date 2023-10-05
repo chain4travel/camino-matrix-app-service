@@ -43,7 +43,7 @@ type Service struct {
 }
 
 func (s *Service) ProcessEvents(ctx context.Context, events []event.Event, matrixTxID string) error {
-	s.logger.Debug("Processing matrix events...")
+	s.logger.Debugf("Processing matrix events (%s)...", matrixTxID)
 	defer s.logger.Debug("Finished processing matrix events")
 	session, err := s.storage.NewSession(context.Background())
 	if err != nil {
@@ -51,21 +51,22 @@ func (s *Service) ProcessEvents(ctx context.Context, events []event.Event, matri
 	}
 	defer session.Abort()
 
-	for _, evnt := range events {
+	for eventIndex, evnt := range events {
 		s.logger.Debugf("Got event: %s", evnt.Type.Type)
 		if matrix.IsC4TMessage(&evnt) {
-			cheques, err := s.matrixClient.GetC4TMessageCheques(evnt)
+			cheques, err := s.matrixClient.ParseC4TMessageCheques(&evnt)
 			if err != nil {
-				return err
+				s.logger.Infof("failed to parse event (%s[%d]): %v", matrixTxID, eventIndex, err)
+				continue
 			}
-			for i, cheque := range cheques {
+			for chequeIndex, cheque := range cheques {
 				if err := cheque.Verify(); err != nil {
-					s.logger.Infof("txnId:%s[%d] cheque (%s) is syntactically invalid: %v", matrixTxID, i, cheque, err)
+					s.logger.Infof("event (%s[%d]) cheque[%d] (%s) is syntactically invalid: %v", matrixTxID, eventIndex, chequeIndex, cheque, err)
 					continue
 				}
 
 				if err := s.verifyChequeSignature(&cheque); err != nil {
-					s.logger.Infof("txnId:%s[%d] cheque (%s) signature is invalid: %v", matrixTxID, i, cheque, err)
+					s.logger.Infof("event (%s[%d]) cheque[%d] (%s) signature is invalid: %v", matrixTxID, eventIndex, chequeIndex, cheque, err)
 					continue
 				}
 
@@ -74,7 +75,7 @@ func (s *Service) ProcessEvents(ctx context.Context, events []event.Event, matri
 					return err
 				}
 				if err := cheque.VerifyWithPrevious(previousChequeRecord); err != nil {
-					s.logger.Infof("txnId:%s[%d] cheque (%s) is semantically invalid: %v", matrixTxID, i, cheque, err)
+					s.logger.Infof("event (%s[%d]) cheque[%d] (%s) is semantically invalid: %v", matrixTxID, eventIndex, chequeIndex, cheque, err)
 					continue
 				}
 

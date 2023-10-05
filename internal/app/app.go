@@ -22,19 +22,19 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		cfg:    cfg,
 	}
 
-	logger.Debug("Creating matrix client...")
-	matrixClient, err := matrix.NewClient(ctx, logger, cfg.MatrixHost, cfg.AccessToken, caminoUserID)
-	if err != nil {
-		return app, err
-	}
-	app.matrixClient = matrixClient
-
 	logger.Debug("Creating camino node client...")
 	nodeClient, err := node.NewClient(ctx, cfg.CaminoNodeHost, logger)
 	if err != nil {
 		return app, err
 	}
 	app.nodeClient = nodeClient
+
+	logger.Debug("Creating matrix client...")
+	matrixClient, err := matrix.NewClient(ctx, logger, cfg.MatrixHost, cfg.AccessToken, caminoUserID, nodeClient.NetworkID())
+	if err != nil {
+		return app, err
+	}
+	app.matrixClient = matrixClient
 
 	logger.Debug("Creating storage...")
 	storage, err := storage.New(ctx, logger, cfg.DBPath, cfg.DBName, cfg.MigrationsPath)

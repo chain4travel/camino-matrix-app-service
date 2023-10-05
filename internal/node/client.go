@@ -23,6 +23,7 @@ var _ Client = (*client)(nil)
 type Client interface {
 	CashOutTx(cheque *models.Cheque) (ids.ID, error)
 	GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error)
+	NetworkID() uint32
 }
 
 func NewClient(ctx context.Context, nodeURI string, logger *zap.SugaredLogger) (Client, error) {
@@ -61,6 +62,10 @@ type client struct {
 	tChainID  ids.ID
 	networkID uint32
 	hrp       string
+}
+
+func (c *client) NetworkID() uint32 {
+	return c.networkID
 }
 
 func (c *client) CashOutTx(cheque *models.Cheque) (ids.ID, error) {
