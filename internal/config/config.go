@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/ava-labs/avalanchego/utils/wrappers"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -41,22 +40,7 @@ func BindFlags(cmd *cobra.Command) error {
 	cmd.PersistentFlags().String(dbNameKey, ".", "Database name.")
 	cmd.PersistentFlags().String(migrationsPathKey, ".", "Path to database migrations folder.")
 
-	errs := wrappers.Errs{}
-	errs.Add(
-		viper.BindPFlag(configFlagKey, cmd.PersistentFlags().Lookup(configFlagKey)),
-
-		viper.BindPFlag(cashOutPeriodKey, cmd.PersistentFlags().Lookup(cashOutPeriodKey)),
-		viper.BindPFlag(caminoNodeHostKey, cmd.PersistentFlags().Lookup(caminoNodeHostKey)),
-		viper.BindPFlag(matrixHostKey, cmd.PersistentFlags().Lookup(matrixHostKey)),
-		viper.BindPFlag(httPortKey, cmd.PersistentFlags().Lookup(httPortKey)),
-		viper.BindPFlag(accessTokenKey, cmd.PersistentFlags().Lookup(accessTokenKey)),
-		viper.BindPFlag(matrixAccessTokenKey, cmd.PersistentFlags().Lookup(matrixAccessTokenKey)),
-		viper.BindPFlag(logLevelKey, cmd.PersistentFlags().Lookup(logLevelKey)),
-		viper.BindPFlag(dbPathKey, cmd.PersistentFlags().Lookup(dbPathKey)),
-		viper.BindPFlag(dbNameKey, cmd.PersistentFlags().Lookup(dbNameKey)),
-		viper.BindPFlag(migrationsPathKey, cmd.PersistentFlags().Lookup(migrationsPathKey)),
-	)
-	return errs.Err
+	return viper.BindPFlags(cmd.PersistentFlags())
 }
 
 type Config struct {
@@ -73,13 +57,19 @@ type Config struct {
 }
 
 func ReadConfig(ctx context.Context, logger *zap.SugaredLogger) (*Config, error) {
-	logger.Debug("Reading config...")
 	viper.SetConfigName(configFileName)
 	viper.AddConfigPath(".")
 	viper.AddConfigPath(viper.GetString(configFlagKey)) // must already be bound from flag
 
+	viper.SetEnvPrefix("CAMINO_APPSERVICE")
+	viper.AutomaticEnv()
+
 	if err := viper.ReadInConfig(); err != nil {
-		logger.Info(err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			logger.Info("Config file not found")
+		} else {
+			logger.Errorf("Error reading config file: %s", err)
+		}
 	}
 
 	cfg := &Config{}

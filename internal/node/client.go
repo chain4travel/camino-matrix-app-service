@@ -3,30 +3,21 @@ package node
 import (
 	"context"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/models"
+	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 
-	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/constants"
-	"github.com/ava-labs/avalanchego/utils/formatting"
-	"github.com/ava-labs/avalanchego/vms/components/avax"
 	"github.com/ava-labs/avalanchego/vms/platformvm"
-	pAPI "github.com/ava-labs/avalanchego/vms/platformvm/api"
-	"github.com/ava-labs/avalanchego/vms/touristicvm"
-	"github.com/ava-labs/avalanchego/vms/touristicvm/locked"
-	tStatus "github.com/ava-labs/avalanchego/vms/touristicvm/status"
-	tTxs "github.com/ava-labs/avalanchego/vms/touristicvm/txs"
-	"go.uber.org/zap"
 )
 
 var _ Client = (*client)(nil)
 
 type Client interface {
-	CashOutTx(cheque *models.Cheque) (ids.ID, error)
-	GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error)
+	// CashOutTx(cheque *models.Cheque) (ids.ID, error)
+	// GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error)
 	NetworkID() uint32
 }
 
-func NewClient(ctx context.Context, nodeURI string, logger *zap.SugaredLogger) (Client, error) {
+func NewClient(ctx context.Context, nodeURI string, logger logger.Logger) (Client, error) {
 	pClient := platformvm.NewClient(nodeURI)
 
 	nodeCfg, err := pClient.GetConfiguration(ctx)
@@ -35,110 +26,97 @@ func NewClient(ctx context.Context, nodeURI string, logger *zap.SugaredLogger) (
 		return nil, err
 	}
 
-	tChainID := ids.ID{}
-	for _, blockchain := range nodeCfg.Blockchains {
-		if blockchain.Name == "T-Chain" {
-			tChainID = blockchain.ID
-			break
-		}
-	}
-
 	return &client{
 		logger:    logger,
-		T:         touristicvm.NewClient(nodeURI),
 		uri:       nodeURI,
 		networkID: uint32(nodeCfg.NetworkID),
-		tChainID:  tChainID,
 		hrp:       constants.GetHRP(uint32(nodeCfg.NetworkID)),
 	}, nil
 }
 
 type client struct {
-	logger *zap.SugaredLogger
+	logger logger.Logger
 
-	T touristicvm.Client
-
-	uri       string
-	tChainID  ids.ID
-	networkID uint32
-	hrp       string
+	uri       string // TODO@ is it needed?
+	networkID uint32 // TODO@ is it needed?
+	hrp       string // TODO@ is it needed?
 }
 
 func (c *client) NetworkID() uint32 {
 	return c.networkID
 }
 
-func (c *client) CashOutTx(cheque *models.Cheque) (ids.ID, error) {
-	c.logger.Debug("Creating cashOutTx...")
-	c.logger.Debug("Requesting T-chain SpendWithWrapper...")
-	ins, outs, _, _, err := c.T.SpendWithWrapper(
-		context.Background(),
-		cheque.Issuer,
-		cheque.Agent,
-		cheque.Beneficiary,
-		cheque.Amount, 0,
-		locked.StateUnlocked,
-		pAPI.Owner{},
-	)
-	if err != nil {
-		c.logger.Error(err)
-		return ids.Empty, err
-	}
+// func (c *client) CashOutTx(cheque *models.Cheque) (ids.ID, error) {
+// 	c.logger.Debug("Creating cashOutTx...")
+// 	c.logger.Debug("Requesting T-chain SpendWithWrapper...")
+// 	ins, outs, _, _, err := c.T.SpendWithWrapper(
+// 		context.Background(),
+// 		cheque.Issuer,
+// 		cheque.Agent,
+// 		cheque.Beneficiary,
+// 		cheque.Amount, 0,
+// 		locked.StateUnlocked,
+// 		pAPI.Owner{},
+// 	)
+// 	if err != nil {
+// 		c.logger.Error(err)
+// 		return ids.Empty, err
+// 	}
 
-	utx := &tTxs.CashoutChequeTx{
-		BaseTx: tTxs.BaseTx{BaseTx: avax.BaseTx{
-			NetworkID:    c.networkID,
-			BlockchainID: c.tChainID,
-			Ins:          ins,
-			Outs:         outs,
-		}},
-		Cheque: tTxs.SignedCheque{
-			Cheque: cheque.Cheque,
-			Auth:   cheque.Credential(),
-		},
-	}
+// 	utx := &tTxs.CashoutChequeTx{
+// 		BaseTx: tTxs.BaseTx{BaseTx: avax.BaseTx{
+// 			NetworkID:    c.networkID,
+// 			BlockchainID: c.tChainID,
+// 			Ins:          ins,
+// 			Outs:         outs,
+// 		}},
+// 		Cheque: tTxs.SignedCheque{
+// 			Cheque: cheque.Cheque,
+// 			Auth:   cheque.Credential(),
+// 		},
+// 	}
 
-	tx, err := tTxs.NewSigned(utx, tTxs.Codec, nil)
-	if err != nil {
-		c.logger.Error(err)
-		return ids.Empty, err
-	}
+// 	tx, err := tTxs.NewSigned(utx, tTxs.Codec, nil)
+// 	if err != nil {
+// 		c.logger.Error(err)
+// 		return ids.Empty, err
+// 	}
 
-	txEncodedBytes, err := formatting.Encode(formatting.Hex, tx.Bytes())
-	if err != nil {
-		c.logger.Error(err)
-		return ids.Empty, err
-	}
-	c.logger.Debug(txEncodedBytes)
-	c.logger.Debugf("txID: %s", tx.ID())
+// 	txEncodedBytes, err := formatting.Encode(formatting.Hex, tx.Bytes())
+// 	if err != nil {
+// 		c.logger.Error(err)
+// 		return ids.Empty, err
+// 	}
+// 	c.logger.Debug(txEncodedBytes)
+// 	c.logger.Debugf("txID: %s", tx.ID())
 
-	resp, err := c.T.GetTxStatus(context.Background(), tx.ID())
-	if err != nil {
-		c.logger.Error(err)
-		return ids.Empty, err
-	}
+// 	resp, err := c.T.GetTxStatus(context.Background(), tx.ID())
+// 	if err != nil {
+// 		c.logger.Error(err)
+// 		return ids.Empty, err
+// 	}
 
-	if resp.Status != tStatus.Unknown {
-		c.logger.Debug("Found existing cashOutTx")
-		return tx.ID(), nil
-	}
+// 	if resp.Status != tStatus.Unknown {
+// 		c.logger.Debug("Found existing cashOutTx")
+// 		return tx.ID(), nil
+// 	}
 
-	c.logger.Debug("Issuing cashOutTx...")
-	if _, err := c.T.IssueTx(context.Background(), tx.Bytes()); err != nil {
-		c.logger.Error(err)
-		return ids.Empty, err
-	}
-	c.logger.Debug("CashOutTx issued")
-	return tx.ID(), nil
-}
+// 	c.logger.Debug("Issuing cashOutTx...")
+// 	if _, err := c.T.IssueTx(context.Background(), tx.Bytes()); err != nil {
+// 		c.logger.Error(err)
+// 		return ids.Empty, err
+// 	}
+// 	c.logger.Debug("CashOutTx issued")
+// 	return tx.ID(), nil
+// }
 
-func (c *client) GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error) {
-	c.logger.Debugf("Getting status of tx %s", txID)
-	resp, err := c.T.GetTxStatus(context.Background(), txID)
-	if err != nil {
-		c.logger.Error(err)
-		return tStatus.Unknown, "", err
-	}
-	c.logger.Debugf("Tx %s status: %s (%s)", txID, resp.Status, resp.Reason)
-	return resp.Status, resp.Reason, nil
-}
+// func (c *client) GetTxStatus(txID ids.ID) (status tStatus.Status, reason string, err error) {
+// 	c.logger.Debugf("Getting status of tx %s", txID)
+// 	resp, err := c.T.GetTxStatus(context.Background(), txID)
+// 	if err != nil {
+// 		c.logger.Error(err)
+// 		return tStatus.Unknown, "", err
+// 	}
+// 	c.logger.Debugf("Tx %s status: %s (%s)", txID, resp.Status, resp.Reason)
+// 	return resp.Status, resp.Reason, nil
+// }

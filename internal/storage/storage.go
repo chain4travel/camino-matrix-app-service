@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"go.uber.org/zap"
 )
 
 var (
@@ -35,7 +35,7 @@ type Session interface {
 	GetNotCashedCheques(ctx context.Context) ([]models.Cheque, error)
 }
 
-func New(ctx context.Context, logger *zap.SugaredLogger, dbPath, dbName, migrationsPath string) (Storage, error) {
+func New(ctx context.Context, logger logger.Logger, dbPath, dbName, migrationsPath string) (Storage, error) {
 	db, err := sqlx.Open("sqlite3", dbPath)
 	if err != nil {
 		logger.Error(err)
@@ -59,7 +59,7 @@ func New(ctx context.Context, logger *zap.SugaredLogger, dbPath, dbName, migrati
 }
 
 type storage struct {
-	logger *zap.SugaredLogger
+	logger logger.Logger
 	db     *sqlx.DB
 
 	getChequeByID, getNotCashedCheques *sqlx.Stmt
@@ -137,7 +137,7 @@ func (s *storage) NewSession(ctx context.Context) (Session, error) {
 
 type session struct {
 	storage  *storage
-	logger   *zap.SugaredLogger
+	logger   logger.Logger
 	tx       *sqlx.Tx
 	commited bool
 }

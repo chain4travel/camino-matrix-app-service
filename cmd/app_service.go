@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os/signal"
 	"syscall"
@@ -13,46 +14,64 @@ import (
 	"go.uber.org/zap"
 )
 
-func Execute() error {
-	rootCmd := &cobra.Command{
-		Use: "app-service",
-		Run: func(cmd *cobra.Command, args []string) {
-			zapLogger, err := zap.NewDevelopment()
-			if err != nil {
-				log.Fatal(err)
-			}
-			logger := zapLogger.Sugar()
-			defer func() { _ = logger.Sync() }()
+const (
+	Version = "0.0.1"
+)
 
-			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-			defer stop()
+var rootCmd = &cobra.Command{
+	Use:        "camino-matrix-app-service",
+	Short:      "", // TODO@
+	Version:    Version,
+	SuggestFor: []string{"camino-matrix", "matrix-app-service", "camino-app-service", "app-service"},
+	RunE:       rootFunc,
+}
 
-			cfg, err := config.ReadConfig(ctx, logger)
-			if err != nil {
-				return
-			}
-
-			if cfg.LogLevel == "info" {
-				zapLogger, err = zap.NewProduction()
-				if err != nil {
-					log.Fatal(err)
-				}
-				_ = logger.Sync()
-				logger = zapLogger.Sugar()
-				defer func() { _ = logger.Sync() }()
-			}
-
-			app, err := app.NewApp(ctx, logger, cfg)
-			if err != nil {
-				app.Close(context.Background())
-				return
-			}
-
-			app.Run(ctx)
-		},
+func rootFunc(cmd *cobra.Command, args []string) error {
+	zapLogger, err := zap.NewDevelopment()
+	if err != nil {
+		log.Fatal(err)
 	}
-	if err := config.BindFlags(rootCmd); err != nil {
+	logger := zapLogger.Sugar()
+	defer func() { _ = logger.Sync() }()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	cfg, err := config.ReadConfig(ctx, logger)
+	if err != nil {
+		logger.Error(err)
 		return err
 	}
+
+	if cfg.LogLevel == "info" {
+		zapLogger, err = zap.NewProduction()
+		if err != nil {
+			log.Fatal(err)
+		}
+		_ = logger.Sync()
+		logger = zapLogger.Sugar()
+		defer func() { _ = logger.Sync() }()
+	}
+
+	app, err := app.NewApp(ctx, logger, cfg)
+	if err != nil {
+		logger.Error(err)
+		app.Close(context.Background())
+		return err
+	}
+
+	return app.Run(ctx)
+}
+
+func init() {
+	cobra.EnablePrefixMatching = true
+
+	if err := config.BindFlags(rootCmd); err != nil {
+		panic(fmt.Errorf("Failed to bind flags: %w", err))
+	}
+
+}
+
+func Execute() error {
 	return rootCmd.Execute()
 }

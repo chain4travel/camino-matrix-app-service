@@ -6,16 +6,16 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/chain4travel/camino-synapse-app-service/internal/service"
 
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
-	"go.uber.org/zap"
 	"maunium.net/go/mautrix/event"
 )
 
-func newServer(ctx context.Context, logger *zap.SugaredLogger, service *service.Service, hsAccessToken, port string) *server {
+func newServer(ctx context.Context, logger logger.Logger, service *service.Service, hsAccessToken, port string) *server {
 	s := &server{
 		logger:  logger,
 		e:       echo.New(),
@@ -37,7 +37,7 @@ func newServer(ctx context.Context, logger *zap.SugaredLogger, service *service.
 }
 
 type server struct {
-	logger  *zap.SugaredLogger
+	logger  logger.Logger
 	e       *echo.Echo
 	service *service.Service
 	port    string
@@ -92,7 +92,7 @@ func middlewareBearerAuth(token string) echo.MiddlewareFunc {
 	}
 }
 
-func middlewareRecover(logger *zap.SugaredLogger) echo.MiddlewareFunc {
+func middlewareRecover(logger logger.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			defer func() {

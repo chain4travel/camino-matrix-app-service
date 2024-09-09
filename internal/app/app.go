@@ -4,19 +4,19 @@ import (
 	"context"
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/config"
+	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/chain4travel/camino-synapse-app-service/internal/matrix"
 	"github.com/chain4travel/camino-synapse-app-service/internal/node"
 	"github.com/chain4travel/camino-synapse-app-service/internal/scheduler"
 	"github.com/chain4travel/camino-synapse-app-service/internal/service"
 	"github.com/chain4travel/camino-synapse-app-service/internal/storage"
 
-	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
 const caminoUserID = "@camino:localhost:8080" // TODO leave camino part, reconstruct the rest
 
-func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) (*app, error) {
+func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*app, error) {
 	app := &app{
 		logger: logger,
 		cfg:    cfg,
@@ -56,7 +56,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 }
 
 type app struct {
-	logger       *zap.SugaredLogger
+	logger       logger.Logger
 	cfg          *config.Config
 	matrixClient matrix.Client
 	nodeClient   node.Client
@@ -66,17 +66,17 @@ type app struct {
 	scheduler    scheduler.Scheduler
 }
 
-func (app *app) Run(ctx context.Context) {
+func (app *app) Run(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx) // error here will call ctx.cancel() and finish other Go-s
 
 	// run
 
 	g.Go(func() error {
 		app.logger.Debug("Scheduling cash-out...")
-		if err := app.scheduler.Schedule(app.cfg.CashOutPeriod, app.service.CashOut); err != nil {
-			app.logger.Error(err)
-			return err
-		}
+		// if err := app.scheduler.Schedule(app.cfg.CashOutPeriod, app.service.CashOut); err != nil {
+		// 	app.logger.Error(err)
+		// 	return err
+		// }
 
 		app.logger.Debug("Starting scheduler...")
 		// scheduler.Start doesn't block, but we need group to call gCtx.cancel if this one errors
@@ -110,10 +110,12 @@ func (app *app) Run(ctx context.Context) {
 	})
 
 	// wait
-
-	if err := g.Wait(); err != nil {
+	err := g.Wait()
+	if err != nil {
 		app.logger.Error(err) // will log first run/stop error
 	}
+
+	return err
 }
 
 func (app *app) Close(ctx context.Context) {

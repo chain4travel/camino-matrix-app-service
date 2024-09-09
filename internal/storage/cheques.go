@@ -7,8 +7,8 @@ import (
 
 	"github.com/ava-labs/avalanchego/ids"
 	"github.com/ava-labs/avalanchego/utils/crypto/secp256k1"
-	tStatus "github.com/ava-labs/avalanchego/vms/touristicvm/status"
-	"github.com/ava-labs/avalanchego/vms/touristicvm/txs"
+
+	// tStatus "github.com/ava-labs/avalanchego/vms/touristicvm/status"
 	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 )
 
@@ -143,82 +143,82 @@ func (s *storage) prepareChequesStmts(ctx context.Context) error {
 	}
 	s.updateCheque = updateCheque
 
-	getNotCashedCheques, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
-		SELECT * FROM %s
-		WHERE status != %d OR status IS NULL
-	`, chequesTableName, tStatus.Committed))
-	if err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	s.getNotCashedCheques = getNotCashedCheques
+	// getNotCashedCheques, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+	// 	SELECT * FROM %s
+	// 	WHERE status != %d OR status IS NULL
+	// `, chequesTableName, tStatus.Committed))
+	// if err != nil {
+	// 	s.logger.Error(err)
+	// 	return err
+	// }
+	// s.getNotCashedCheques = getNotCashedCheques
 
 	return nil
 }
 
 func (s *storage) modelFromCheque(cheque *cheque) (*models.Cheque, error) {
-	issuerID, err := ids.ShortFromString(cheque.Issuer)
-	if err != nil {
-		s.logger.Error(err)
-		return nil, err
-	}
+	// issuerID, err := ids.ShortFromString(cheque.Issuer)
+	// if err != nil {
+	// 	s.logger.Error(err)
+	// 	return nil, err
+	// }
 
-	agentID, err := ids.ShortFromString(cheque.Agent)
-	if err != nil {
-		s.logger.Error(err)
-		return nil, err
-	}
+	// agentID, err := ids.ShortFromString(cheque.Agent)
+	// if err != nil {
+	// 	s.logger.Error(err)
+	// 	return nil, err
+	// }
 
-	beneficiaryID, err := ids.ShortFromString(cheque.Beneficiary)
-	if err != nil {
-		s.logger.Error(err)
-		return nil, err
-	}
+	// beneficiaryID, err := ids.ShortFromString(cheque.Beneficiary)
+	// if err != nil {
+	// 	s.logger.Error(err)
+	// 	return nil, err
+	// }
 
 	txID := ids.Empty
 	if cheque.TxID != nil {
-		txID, err = ids.FromString(*cheque.TxID)
-		if err != nil {
-			s.logger.Error(err)
-			return nil, err
-		}
+		// txID, err = ids.FromString(*cheque.TxID)
+		// if err != nil {
+		// 	s.logger.Error(err)
+		// 	return nil, err
+		// }
 	}
 
-	txStatus := tStatus.Unknown
-	if cheque.Status != nil {
-		txStatus = tStatus.Status(*cheque.Status)
-	}
+	// txStatus := tStatus.Unknown
+	// if cheque.Status != nil {
+	// 	txStatus = tStatus.Status(*cheque.Status)
+	// }
 
 	signature := [secp256k1.SignatureLen]byte{}
 	copy(signature[:], cheque.Signature)
 
 	return &models.Cheque{
 		ChequebookID: cheque.ChequebookID,
-		Cheque: txs.Cheque{
-			Issuer:      issuerID,
-			Agent:       agentID,
-			Beneficiary: beneficiaryID,
-			Amount:      cheque.Amount,
-			SerialID:    cheque.SerialID,
-		},
+		// Cheque: txs.Cheque{
+		// 	Issuer:      issuerID,
+		// 	Agent:       agentID,
+		// 	Beneficiary: beneficiaryID,
+		// 	Amount:      cheque.Amount,
+		// 	SerialID:    cheque.SerialID,
+		// },
 		Signature: signature,
 		TxID:      txID,
-		Status:    txStatus,
+		// Status:    txStatus,
 	}, nil
 }
 
 func chequeFromModel(model *models.Cheque) *cheque {
 	txID := model.TxID.String()
-	txStatus := uint32(model.Status)
+	// txStatus := uint32(model.Status)
 	return &cheque{
 		ChequebookID: model.ChequebookID,
-		Issuer:       model.Issuer.String(),
-		Agent:        model.Agent.String(),
-		Beneficiary:  model.Beneficiary.String(),
-		Amount:       model.Amount,
-		SerialID:     model.SerialID,
-		Signature:    model.Signature[:],
-		TxID:         &txID,
-		Status:       &txStatus,
+		// Issuer:       model.Issuer.String(),
+		// Agent:        model.Agent.String(),
+		// Beneficiary:  model.Beneficiary.String(),
+		// Amount:       model.Amount,
+		// SerialID:     model.SerialID,
+		Signature: model.Signature[:],
+		TxID:      &txID,
+		// Status:    &txStatus,
 	}
 }
