@@ -1,1 +1,3 @@
 DROP TABLE IF EXISTS cheques;
+DROP TABLE IF EXISTS chunked_messages;
+DROP TABLE IF EXISTS jobs;

@@ -8,103 +8,109 @@ import (
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/chain4travel/camino-synapse-app-service/internal/service"
-
-	"github.com/labstack/echo"
-	"github.com/labstack/echo/middleware"
-	"github.com/labstack/gommon/log"
 	"maunium.net/go/mautrix/event"
+
+	"github.com/gin-gonic/gin"
 )
 
-func newServer(ctx context.Context, logger logger.Logger, service *service.Service, hsAccessToken, port string) *server {
+func newServer(_ context.Context, logger logger.Logger, hsAccessToken, port string, service service.Service) *server {
+	ginRouter := gin.New()
 	s := &server{
-		logger:  logger,
-		e:       echo.New(),
+		logger: logger,
+		gin:    ginRouter,
+		port:   port,
+		httpServer: &http.Server{
+			Addr:    ":" + port,
+			Handler: ginRouter,
+		},
 		service: service,
-		port:    port,
 	}
 
-	s.e.HideBanner = true
-	s.e.Logger.SetLevel(log.DEBUG)
+	s.gin.Use(middlewareLogger(logger))
+	s.gin.Use(middlewareRecover(logger))
+	s.gin.Use(middlewareBearerAuth(hsAccessToken))
 
-	s.e.Use(middleware.Logger())
-	s.e.Use(middlewareRecover(logger))
-	s.e.Use(middlewareBearerAuth(hsAccessToken))
-
-	s.e.PUT("/_matrix/app/v1/transactions/:txnId", s.putTransactions)
-	s.e.POST("/_matrix/app/v1/ping", s.ping)
+	s.gin.PUT("/_matrix/app/v1/transactions/:txnId", s.putTransactions)
+	s.gin.POST("/_matrix/app/v1/ping", s.ping)
 
 	return s
 }
 
 type server struct {
-	logger  logger.Logger
-	e       *echo.Echo
-	service *service.Service
-	port    string
+	logger     logger.Logger
+	httpServer *http.Server
+	gin        *gin.Engine
+	port       string
+	service    service.Service
 }
 
 func (s *server) Start(ctx context.Context) error {
-	return s.e.Start(":" + s.port)
+	s.logger.Infof("Started HTTP server on %s", s.httpServer.Addr)
+	return s.httpServer.ListenAndServe()
 }
 
 func (s *server) Stop(ctx context.Context) error {
-	return s.e.Shutdown(ctx)
+	return s.httpServer.Shutdown(ctx)
 }
 
 // handlers
 
-type putTransacitonsReq struct {
+type putTransactionsReq struct {
 	Events []event.Event `json:"events"`
 }
 
-func (s *server) putTransactions(c echo.Context) error {
-	reqBody := &putTransacitonsReq{}
+func (s *server) putTransactions(c *gin.Context) {
+	reqBody := &putTransactionsReq{}
 	if err := c.Bind(reqBody); err != nil {
 		s.logger.Error(err)
-		return err
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err})
+		return
 	}
 
-	if err := s.service.ProcessEvents(c.Request().Context(), reqBody.Events, c.Param("txnId")); err != nil {
-		return err
-	}
+	s.service.ProcessEvents(c.Request.Context(), reqBody.Events)
 
-	return c.JSON(http.StatusOK, struct{}{})
+	c.JSON(http.StatusOK, gin.H{})
 }
 
-func (s *server) ping(c echo.Context) error {
-	return c.JSON(http.StatusOK, struct{}{})
+func (s *server) ping(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"message": "pong",
+	})
 }
 
 // middlewares
 
-func middlewareBearerAuth(token string) echo.MiddlewareFunc {
+func middlewareBearerAuth(token string) gin.HandlerFunc {
 	const bearer = "Bearer"
 	const l = len(bearer)
 
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			auth := c.Request().Header.Get(echo.HeaderAuthorization)
-			if len(auth) > l+1 && strings.EqualFold(auth[:l], bearer) && auth[l+1:] == token {
-				return next(c)
-			}
-			return echo.ErrUnauthorized
+	return func(c *gin.Context) {
+		auth := c.GetHeader("Authorization")
+		if len(auth) > l+1 && strings.EqualFold(auth[:l], bearer) && auth[l+1:] == token {
+			c.Next()
 		}
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 	}
 }
 
-func middlewareRecover(logger logger.Logger) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					err, ok := r.(error)
-					if !ok {
-						err = fmt.Errorf("%v", r)
-					}
-					logger.Errorf("PANIC recovered: %v", err)
+func middlewareRecover(logger logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		defer func() {
+			if r := recover(); r != nil {
+				err, ok := r.(error)
+				if !ok {
+					err = fmt.Errorf("%v", r)
 				}
-			}()
-			return next(c)
-		}
+				logger.Errorf("PANIC recovered: %v", err)
+			}
+		}()
+		c.Next()
+	}
+}
+
+func middlewareLogger(_ logger.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// TODO@ debug-log incoming requests ?
+		c.Next()
 	}
 }

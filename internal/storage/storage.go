@@ -6,7 +6,6 @@ import (
 	"errors"
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
-	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -14,10 +13,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// TODO@ confirm that all db types are correct
 var (
 	_ Storage = (*storage)(nil)
+	_ Session = (*session)(nil)
 
-	ErrNotFound = errors.New("not found")
+	ErrNotFound        = errors.New("not found")
+	ErrAlreadyComitted = errors.New("already commited")
 )
 
 type Storage interface {
@@ -29,10 +31,9 @@ type Session interface {
 	Commit() error
 	Abort()
 
-	GetCheque(ctx context.Context, chequebookID string) (*models.Cheque, error)
-	AddCheque(ctx context.Context, cheque *models.Cheque) error
-	UpdateCheque(ctx context.Context, cheque *models.Cheque) error
-	GetNotCashedCheques(ctx context.Context) ([]models.Cheque, error)
+	JobsStorage
+	ChequesStorage
+	ChunkedMessagesStorage
 }
 
 func New(ctx context.Context, logger logger.Logger, dbPath, dbName, migrationsPath string) (Storage, error) {
@@ -62,11 +63,17 @@ type storage struct {
 	logger logger.Logger
 	db     *sqlx.DB
 
-	getChequeByID, getNotCashedCheques *sqlx.Stmt
-	addCheque, updateCheque            *sqlx.NamedStmt
+	getChequeByID, getNotCashedChequebooks *sqlx.Stmt
+	addChequebook, updateChequebook        *sqlx.NamedStmt
+
+	getChunkNumbers, addMessageChunk, deleteChunkedMessage *sqlx.Stmt
+	addChunkNumbers                                        *sqlx.NamedStmt
+
+	getAllJobs, getJobByName *sqlx.Stmt
+	addJob                   *sqlx.NamedStmt
 }
 
-func (s *storage) migrate(ctx context.Context, dbName, migrationsPath string) error {
+func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) error {
 	s.logger.Infof("Performing db migrations...")
 
 	driver, err := sqlite3.WithInstance(s.db.DB, &sqlite3.Config{})
@@ -115,7 +122,11 @@ func (s *storage) migrate(ctx context.Context, dbName, migrationsPath string) er
 }
 
 func (s *storage) prepare(ctx context.Context) error {
-	return s.prepareChequesStmts(ctx)
+	return errors.Join(
+		s.prepareChequesStmts(ctx),
+		s.prepareChunkedMessagesStmts(ctx),
+		s.prepareJobsStmts(ctx),
+	)
 }
 
 func (s *storage) Close(ctx context.Context) error {
@@ -127,7 +138,9 @@ func (s *storage) Close(ctx context.Context) error {
 }
 
 func (s *storage) NewSession(ctx context.Context) (Session, error) {
-	tx, err := s.db.BeginTxx(ctx, nil)
+	tx, err := s.db.BeginTxx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
 	if err != nil {
 		s.logger.Error(err)
 		return nil, err
@@ -144,11 +157,11 @@ type session struct {
 
 func (s *session) Commit() error {
 	if s.commited {
-		return errors.New("already commited")
+		return ErrAlreadyComitted
 	}
 	if err := s.tx.Commit(); err != nil {
 		s.logger.Error(err)
-		return err
+		return upgradeError(err)
 	}
 	s.commited = true
 	return nil
@@ -167,6 +180,15 @@ func upgradeError(err error) error {
 	switch err {
 	case sql.ErrNoRows:
 		return ErrNotFound
+	default:
+		return err
+	}
+}
+
+func upgradeErrorAllowNotFound(err error) error {
+	switch err {
+	case sql.ErrNoRows:
+		return nil
 	default:
 		return err
 	}

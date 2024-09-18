@@ -1,0 +1,133 @@
+package storage
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/chain4travel/camino-synapse-app-service/internal/models"
+)
+
+// TODO@ replace QueryxContext with select ?
+
+const jobsTableName = "jobs"
+
+var (
+	_ JobsStorage = (*session)(nil)
+)
+
+type JobsStorage interface {
+	GetAllJobs(ctx context.Context) ([]*models.Job, error)
+	AddJob(ctx context.Context, job *models.Job) error
+	GetJobByName(ctx context.Context, jobName string) (*models.Job, error)
+}
+
+type job struct {
+	Name      string `db:"name"`
+	ExecuteAt uint64 `db:"execute_at"`
+	Period    uint64 `db:"period"`
+}
+
+func (s *session) GetJobByName(ctx context.Context, jobName string) (*models.Job, error) {
+	job := &job{}
+	if err := s.tx.StmtxContext(ctx, s.storage.getJobByName).GetContext(ctx, job, jobName); err != nil {
+		if err != sql.ErrNoRows {
+			s.logger.Error(err)
+		}
+		return nil, upgradeError(err)
+	}
+	return modelFromJob(job), nil
+}
+
+func (s *session) AddJob(ctx context.Context, job *models.Job) error {
+	result, err := s.tx.NamedStmtContext(ctx, s.storage.addJob).
+		ExecContext(ctx, jobFromModel(job))
+	if err != nil {
+		s.logger.Error(err)
+		return upgradeError(err)
+	}
+	if rowsAffected, err := result.RowsAffected(); err != nil {
+		s.logger.Error(err)
+		return upgradeError(err)
+	} else if rowsAffected != 1 {
+		return fmt.Errorf("failed to add cheque: expected to affect 1 row, but affected %d", rowsAffected)
+	}
+	return nil
+}
+
+func (s *session) GetAllJobs(ctx context.Context) ([]*models.Job, error) {
+	jobs := []*models.Job{}
+	rows, err := s.tx.StmtxContext(ctx, s.storage.getAllJobs).QueryxContext(ctx)
+	if err != nil {
+		s.logger.Error(err)
+		return nil, upgradeError(err)
+	}
+	for rows.Next() {
+		job := &job{}
+		if err := rows.StructScan(job); err != nil {
+			s.logger.Errorf("failed to get not cashed cheque from db: %v", err)
+			continue
+		}
+		jobs = append(jobs, modelFromJob(job))
+	}
+	return jobs, nil
+}
+
+func (s *storage) prepareJobsStmts(ctx context.Context) error {
+	getJobByName, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+		SELECT * FROM %s
+		WHERE name = ?
+	`, jobsTableName))
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	s.getJobByName = getJobByName
+
+	addJob, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
+		INSERT INTO %s (
+			name,
+			execute_at,
+			period
+		) VALUES (
+			:name,
+			:execute_at,
+			:period
+		)
+		ON CONFLICT(name)
+		DO UPDATE SET period = excluded.period
+	`, jobsTableName))
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	s.addJob = addJob
+
+	getAllJobs, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+		SELECT * FROM %s
+	`, jobsTableName))
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	s.getAllJobs = getAllJobs
+
+	return nil
+}
+
+func modelFromJob(job *job) *models.Job {
+	return &models.Job{
+		Name:      job.Name,
+		ExecuteAt: time.Unix(int64(job.ExecuteAt), 0),
+		Period:    time.Duration(job.Period) * time.Second,
+	}
+}
+
+func jobFromModel(model *models.Job) *job {
+	return &job{
+		Name:      model.Name,
+		ExecuteAt: uint64(model.ExecuteAt.Unix()),
+		Period:    uint64(model.Period / time.Second),
+	}
+}

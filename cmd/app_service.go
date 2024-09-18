@@ -20,7 +20,7 @@ const (
 
 var rootCmd = &cobra.Command{
 	Use:        "camino-matrix-app-service",
-	Short:      "", // TODO@
+	Short:      "starts camino matrix app-service",
 	Version:    Version,
 	SuggestFor: []string{"camino-matrix", "matrix-app-service", "camino-app-service", "app-service"},
 	RunE:       rootFunc,
@@ -67,7 +67,7 @@ func init() {
 	cobra.EnablePrefixMatching = true
 
 	if err := config.BindFlags(rootCmd); err != nil {
-		panic(fmt.Errorf("Failed to bind flags: %w", err))
+		panic(fmt.Errorf("failed to bind flags: %w", err))
 	}
 
 }
