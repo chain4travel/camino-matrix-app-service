@@ -62,20 +62,29 @@ func (s *scheduler) Start(ctx context.Context) error {
 		}
 
 		jobName := job.Name
-		timeUntilExecution := time.Duration(0)
-		if job.ExecuteAt.After(time.Now()) {
-			timeUntilExecution = job.Period
+		period := job.Period
+
+		now := time.Now()
+		timeUntilFirstExecution := time.Duration(0)
+		if job.ExecuteAt.After(now) {
+			timeUntilFirstExecution = job.ExecuteAt.Sub(now)
 		}
 
-		s.timersLock.Lock()
-		s.timers[job.Name] = time.AfterFunc(timeUntilExecution, func() {
-			// TODO @evlekht panic handling?
-			if err := s.updateJobExecutionTime(ctx, jobName); err != nil {
-				s.logger.Errorf("failed to update job execution time: %v", err)
-				return // TODO @evlekht handle error, maybe retry
+		timer := time.NewTimer(timeUntilFirstExecution)
+		go func() {
+			for range timer.C { // TODO@ deal with timer stop, is it closing channel?
+				// TODO @evlekht panic handling?
+				if err := s.updateJobExecutionTime(ctx, jobName); err != nil {
+					s.logger.Errorf("failed to update job execution time: %v", err)
+					return // TODO @evlekht handle error, maybe retry
+				}
+				timer.Reset(period)
+				jobHandler()
 			}
-			jobHandler()
-		})
+		}()
+
+		s.timersLock.Lock()
+		s.timers[job.Name] = timer
 		s.timersLock.Unlock()
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"maunium.net/go/mautrix/event"
@@ -24,6 +25,7 @@ import (
 )
 
 const networkFee uint64 = 100000 // nCAM
+// TODO@ how big is msg.Metadata.RequestID ? how many chars?
 
 var _ Service = (*service)(nil)
 
@@ -151,7 +153,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return true, nil
 	}
 
-	chequebookID := models.ChequebookID(cheque)
+	chequebookID := chequebookID(cheque)
 	chequebook, err := session.GetChequebook(ctx, chequebookID)
 	if err != nil && err != storage.ErrNotFound {
 		s.logger.Errorf("Failed to get cheque: %v", err)
@@ -181,7 +183,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	}
 
 	if chequebook == nil {
-		if err := session.AddCheque(ctx, chequebookID, cheque); err != nil {
+		if err := session.AddChequebook(ctx, chequebookFromCheque(chequebookID, cheque)); err != nil {
 			s.logger.Errorf("Failed to store cheque: %v", err)
 			return false, err
 		}
@@ -348,4 +350,30 @@ func (s *service) getCMAccount(address common.Address) (*cmaccount.Cmaccount, er
 	_ = s.cmAccounts.Add(address, cmAccount)
 
 	return cmAccount, nil
+}
+
+func chequebookFromCheque(chequebookID common.Hash, cheque *cheques.SignedCheque) *models.Chequebook {
+	return &models.Chequebook{
+		SignedCheque: cheques.SignedCheque{
+			Cheque: cheques.Cheque{
+				FromCMAccount: cheque.FromCMAccount,
+				ToCMAccount:   cheque.ToCMAccount,
+				ToBot:         cheque.ToBot,
+				Counter:       cheque.Counter,
+				Amount:        cheque.Amount,
+				CreatedAt:     cheque.CreatedAt,
+				ExpiresAt:     cheque.ExpiresAt,
+			},
+			Signature: cheque.Signature,
+		},
+		ChequebookID: chequebookID,
+	}
+}
+
+func chequebookID(cheque *cheques.SignedCheque) common.Hash {
+	return crypto.Keccak256Hash(
+		cheque.FromCMAccount.Bytes(),
+		cheque.ToCMAccount.Bytes(),
+		cheque.ToBot.Bytes(),
+	)
 }

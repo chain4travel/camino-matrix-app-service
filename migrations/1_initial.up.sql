@@ -1,14 +1,14 @@
-CREATE TABLE cheques (
-    chequebook_id    VARCHAR(150)   NOT NULL PRIMARY KEY,
-    from_cm_account  VARCHAR(50)    NOT NULL,
-    to_cm_account    VARCHAR(50)    NOT NULL,
-    to_bot           VARCHAR(50)    NOT NULL,
-    counter          BIGINT         NOT NULL,
-    amount           BIGINT         NOT NULL,
-    created_at       BIGINT         NOT NULL,
-    expires_at       BIGINT         NOT NULL,
-    signature        VARBINARY(128) NOT NULL,
-    tx_id            VARCHAR(50),
+CREATE TABLE chequebooks (
+    chequebook_id    VARBINARY(32)  NOT NULL PRIMARY KEY,
+    from_cm_account  VARBINARY(20)  NOT NULL,
+    to_cm_account    VARBINARY(20)  NOT NULL,
+    to_bot           VARBINARY(20)  NOT NULL,
+    counter          VARBINARY(16)  NOT NULL,
+    amount           VARBINARY(16)  NOT NULL,
+    created_at       VARBINARY(16)  NOT NULL,
+    expires_at       VARBINARY(16)  NOT NULL,
+    signature        VARBINARY(64)  NOT NULL,
+    tx_id            VARBINARY(32),
     status           TINYINT
 );
 
@@ -19,7 +19,7 @@ CREATE TABLE chunked_messages (
 );
 
 CREATE TABLE jobs (
-    name        VARCHAR(150)  NOT NULL PRIMARY KEY,
+    name        VARCHAR(100)  NOT NULL PRIMARY KEY,
     execute_at  BIGINT        NOT NULL,
     period      BIGINT        NOT NULL
 );
