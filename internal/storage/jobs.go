@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,9 +14,7 @@ import (
 
 const jobsTableName = "jobs"
 
-var (
-	_ JobsStorage = (*session)(nil)
-)
+var _ JobsStorage = (*session)(nil)
 
 type JobsStorage interface {
 	GetAllJobs(ctx context.Context) ([]*models.Job, error)
@@ -25,14 +24,14 @@ type JobsStorage interface {
 
 type job struct {
 	Name      string `db:"name"`
-	ExecuteAt uint64 `db:"execute_at"`
-	Period    uint64 `db:"period"`
+	ExecuteAt int64  `db:"execute_at"`
+	Period    int64  `db:"period"`
 }
 
 func (s *session) GetJobByName(ctx context.Context, jobName string) (*models.Job, error) {
 	job := &job{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getJobByName).GetContext(ctx, job, jobName); err != nil {
-		if err != sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return nil, upgradeError(err)
@@ -119,7 +118,7 @@ func (s *storage) prepareJobsStmts(ctx context.Context) error {
 func modelFromJob(job *job) *models.Job {
 	return &models.Job{
 		Name:      job.Name,
-		ExecuteAt: time.Unix(int64(job.ExecuteAt), 0),
+		ExecuteAt: time.Unix(job.ExecuteAt, 0),
 		Period:    time.Duration(job.Period) * time.Second,
 	}
 }
@@ -127,7 +126,7 @@ func modelFromJob(job *job) *models.Job {
 func jobFromModel(model *models.Job) *job {
 	return &job{
 		Name:      model.Name,
-		ExecuteAt: uint64(model.ExecuteAt.Unix()),
-		Period:    uint64(model.Period / time.Second),
+		ExecuteAt: model.ExecuteAt.Unix(),
+		Period:    int64(model.Period / time.Second),
 	}
 }

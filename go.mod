@@ -4,7 +4,7 @@ go 1.23.1
 
 require (
 	github.com/chain4travel/camino-messenger-bot v0.0.0-00010101000000-000000000000
-	github.com/chain4travel/camino-messenger-contracts/go/contracts v0.0.0-20240912140839-74f994884a74
+	github.com/chain4travel/camino-messenger-contracts/go/contracts v0.0.0-20240918114804-fbc75cbe60fc
 	github.com/ethereum/go-ethereum v1.14.8
 	github.com/gin-gonic/gin v1.10.0
 	github.com/golang-migrate/migrate/v4 v4.18.1

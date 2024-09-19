@@ -21,9 +21,7 @@ const (
 
 	cashInPeriodKey             = "cash_in_period"
 	caminoNodeHostKey           = "camino_node_host"
-	matrixHostKey               = "matrix_host"
 	httPortKey                  = "http_port"
-	accessTokenKey              = "access_token"
 	matrixAccessTokenKey        = "matrix_access_token"
 	logLevelKey                 = "log_level"
 	dbPathKey                   = "db_path"
@@ -38,9 +36,7 @@ func BindFlags(cmd *cobra.Command) error {
 
 	cmd.PersistentFlags().String(cashInPeriodKey, ".", "Cash-in period.")
 	cmd.PersistentFlags().String(caminoNodeHostKey, ".", "Camino node host.")
-	cmd.PersistentFlags().String(matrixHostKey, ".", "matrix host.")
 	cmd.PersistentFlags().String(httPortKey, ".", "App-service http port.")
-	cmd.PersistentFlags().String(accessTokenKey, ".", "Access token authorized for app-service by matrix server.")
 	cmd.PersistentFlags().String(matrixAccessTokenKey, ".", "Access token that matrix will use in requests to app-service.")
 	cmd.PersistentFlags().String(logLevelKey, ".", "Log level.")
 	cmd.PersistentFlags().String(dbPathKey, ".", "Path to database.")
@@ -55,9 +51,7 @@ func BindFlags(cmd *cobra.Command) error {
 type UnparsedConfig struct {
 	CashInPeriod               time.Duration `mapstructure:"cash_in_period"`
 	CaminoNodeHost             string        `mapstructure:"camino_node_host"`
-	MatrixHost                 string        `mapstructure:"matrix_host"`
 	HTTPPort                   string        `mapstructure:"http_port"`
-	AccessToken                string        `mapstructure:"access_token"`
 	MatrixAccessToken          string        `mapstructure:"matrix_access_token"`
 	LogLevel                   string        `mapstructure:"log_level"`
 	DBPath                     string        `mapstructure:"db_path"`
@@ -71,9 +65,7 @@ type UnparsedConfig struct {
 type Config struct {
 	CashInPeriod               time.Duration
 	CaminoNodeHost             url.URL
-	MatrixHost                 url.URL
 	HTTPPort                   string
-	AccessToken                string
 	MatrixAccessToken          string
 	LogLevel                   string
 	DBPath                     string
@@ -112,7 +104,8 @@ func (cr *configReader) readConfig(_ context.Context) (*Config, error) {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		var viperErr *viper.ConfigFileNotFoundError
+		if ok := errors.As(err, viperErr); ok {
 			cr.logger.Info("Config file not found")
 		} else {
 			cr.logger.Errorf("Error reading config file: %s", err)
@@ -141,18 +134,10 @@ func (cr *configReader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 		return nil, err
 	}
 
-	matrixURL, err := url.Parse(cfg.MatrixHost)
-	if err != nil {
-		cr.logger.Errorf("Error parsing MatrixHost URL: %s", err)
-		return nil, err
-	}
-
 	return &Config{
 		CashInPeriod:               cfg.CashInPeriod,
 		CaminoNodeHost:             *nodeURL,
-		MatrixHost:                 *matrixURL,
 		HTTPPort:                   cfg.HTTPPort,
-		AccessToken:                cfg.AccessToken,
 		MatrixAccessToken:          cfg.MatrixAccessToken,
 		LogLevel:                   cfg.LogLevel,
 		DBPath:                     cfg.DBPath,

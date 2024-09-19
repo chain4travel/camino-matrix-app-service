@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -43,7 +44,7 @@ type chequebook struct {
 func (s *session) GetChequebook(ctx context.Context, chequebookID common.Hash) (*models.Chequebook, error) {
 	chequebook := &chequebook{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getChequeByID).GetContext(ctx, chequebook, chequebookID); err != nil {
-		if err != sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return nil, upgradeError(err)
@@ -184,7 +185,7 @@ func modelFromChequebook(chequebook *chequebook) (*models.Chequebook, error) {
 
 	status := models.ChequeTxStatusUnknown
 	if chequebook.Status != nil {
-		status = models.ChequeTxStatus(*chequebook.Status)
+		status = *chequebook.Status
 	}
 
 	return &models.Chequebook{

@@ -37,8 +37,6 @@ type Service interface {
 func NewService(
 	ctx context.Context,
 	logger logger.Logger,
-	matrixURI url.URL,
-	matrixAccessToken string,
 	nodeURI url.URL,
 	contractAddr common.Address,
 	networkFeeRecipientKey *ecdsa.PrivateKey,
@@ -114,7 +112,9 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 
 			if banSender {
 				// TODO@ persist with db, make it durable? not just call it from event receiver?
-				s.banUser(ctx, evnt.Sender)
+				if err := s.banUser(ctx, evnt.Sender); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -133,7 +133,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	defer session.Abort()
 
 	storedChunksNumber, maxChunksNumber, err := session.GetChunksNumbers(ctx, msg.Metadata.RequestID)
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Couldn't create storage session: %v", err)
 		return false, err
 	}
@@ -155,7 +155,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 
 	chequebookID := chequebookID(cheque)
 	chequebook, err := session.GetChequebook(ctx, chequebookID)
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Failed to get cheque: %v", err)
 		return false, err
 	}

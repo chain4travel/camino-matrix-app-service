@@ -26,7 +26,7 @@ var rootCmd = &cobra.Command{
 	RunE:       rootFunc,
 }
 
-func rootFunc(cmd *cobra.Command, args []string) error {
+func rootFunc(_ *cobra.Command, _ []string) error {
 	zapLogger, err := zap.NewDevelopment()
 	if err != nil {
 		log.Fatal(err)
@@ -46,7 +46,8 @@ func rootFunc(cmd *cobra.Command, args []string) error {
 	if cfg.LogLevel == "info" {
 		zapLogger, err = zap.NewProduction()
 		if err != nil {
-			log.Fatal(err)
+			logger.Error(err)
+			return err
 		}
 		_ = logger.Sync()
 		logger = zapLogger.Sugar()
@@ -69,7 +70,6 @@ func init() {
 	if err := config.BindFlags(rootCmd); err != nil {
 		panic(fmt.Errorf("failed to bind flags: %w", err))
 	}
-
 }
 
 func Execute() error {

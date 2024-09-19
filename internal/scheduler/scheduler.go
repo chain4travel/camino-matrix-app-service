@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -20,7 +21,7 @@ type Scheduler interface {
 	RegisterJobHandler(jobName string, jobHandler func())
 }
 
-func New(ctx context.Context, logger logger.Logger, storage storage.Storage) Scheduler {
+func New(_ context.Context, logger logger.Logger, storage storage.Storage) Scheduler {
 	return &scheduler{
 		storage:  storage,
 		logger:   logger,
@@ -115,7 +116,7 @@ func (s *scheduler) Schedule(ctx context.Context, period time.Duration, jobName 
 	defer session.Abort()
 
 	job, err := session.GetJobByName(ctx, jobName)
-	if err != nil && err != storage.ErrNotFound {
+	if err != nil && errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("failed to get job: %v", err)
 		return err
 	}

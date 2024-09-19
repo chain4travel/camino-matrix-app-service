@@ -14,8 +14,8 @@ import (
 
 const cashInJobName = "cash_in"
 
-func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*app, error) {
-	app := &app{
+func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*App, error) {
+	app := &App{
 		logger: logger,
 		cfg:    cfg,
 	}
@@ -31,8 +31,6 @@ func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*app
 	service, err := service.NewService(
 		ctx,
 		logger,
-		cfg.MatrixHost,
-		cfg.AccessToken,
 		cfg.CaminoNodeHost,
 		cfg.CMAccountContractAddress,
 		cfg.NetworkFeeRecipientKey,
@@ -60,7 +58,7 @@ func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*app
 	return app, nil
 }
 
-type app struct {
+type App struct {
 	logger     logger.Logger
 	cfg        *config.Config
 	service    service.Service
@@ -69,7 +67,7 @@ type app struct {
 	storage    storage.Storage
 }
 
-func (app *app) Run(ctx context.Context) error {
+func (app *App) Run(ctx context.Context) error {
 	g, gCtx := errgroup.WithContext(ctx) // error here will call ctx.cancel() and finish other Go-s
 
 	// run
@@ -112,7 +110,7 @@ func (app *app) Run(ctx context.Context) error {
 	return err
 }
 
-func (app *app) Close(ctx context.Context) {
+func (app *App) Close(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 
 	if app.httpServer != nil {

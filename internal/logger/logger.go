@@ -2,8 +2,10 @@ package logger
 
 import "go.uber.org/zap"
 
-var _ Logger = (*zap.SugaredLogger)(nil)
-var _ Logger = (*noLog)(nil)
+var (
+	_ Logger = (*zap.SugaredLogger)(nil)
+	_ Logger = (*noLog)(nil)
+)
 
 type Logger interface {
 	Debug(args ...interface{})
@@ -23,14 +25,14 @@ var NoLog = noLog{}
 
 type noLog struct{}
 
-func (*noLog) Debug(args ...interface{})                   {}
-func (*noLog) Debugf(template string, args ...interface{}) {}
-func (*noLog) Info(args ...interface{})                    {}
-func (*noLog) Infof(template string, args ...interface{})  {}
-func (*noLog) Error(args ...interface{})                   {}
-func (*noLog) Errorf(template string, args ...interface{}) {}
-func (*noLog) Warn(args ...interface{})                    {}
-func (*noLog) Warnf(template string, args ...interface{})  {}
-func (*noLog) Fatal(args ...interface{})                   {}
-func (*noLog) Fatalf(template string, args ...interface{}) {}
-func (*noLog) Sync() error                                 { return nil }
+func (*noLog) Debug(_ ...interface{})            {}
+func (*noLog) Debugf(_ string, _ ...interface{}) {}
+func (*noLog) Info(_ ...interface{})             {}
+func (*noLog) Infof(_ string, _ ...interface{})  {}
+func (*noLog) Error(_ ...interface{})            {}
+func (*noLog) Errorf(_ string, _ ...interface{}) {}
+func (*noLog) Warn(_ ...interface{})             {}
+func (*noLog) Warnf(_ string, _ ...interface{})  {}
+func (*noLog) Fatal(_ ...interface{})            {}
+func (*noLog) Fatalf(_ string, _ ...interface{}) {}
+func (*noLog) Sync() error                       { return nil }

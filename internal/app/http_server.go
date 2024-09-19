@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/chain4travel/camino-synapse-app-service/internal/service"
@@ -20,8 +21,9 @@ func newServer(_ context.Context, logger logger.Logger, hsAccessToken, port stri
 		gin:    ginRouter,
 		port:   port,
 		httpServer: &http.Server{
-			Addr:    ":" + port,
-			Handler: ginRouter,
+			Addr:              ":" + port,
+			Handler:           ginRouter,
+			ReadHeaderTimeout: time.Second * 10,
 		},
 		service: service,
 	}
@@ -44,7 +46,7 @@ type server struct {
 	service    service.Service
 }
 
-func (s *server) Start(ctx context.Context) error {
+func (s *server) Start(_ context.Context) error {
 	s.logger.Infof("Started HTTP server on %s", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
 }
@@ -67,7 +69,11 @@ func (s *server) putTransactions(c *gin.Context) {
 		return
 	}
 
-	s.service.ProcessEvents(c.Request.Context(), reqBody.Events)
+	if err := s.service.ProcessEvents(c.Request.Context(), reqBody.Events); err != nil {
+		s.logger.Errorf("failed to process events: %v", err) // TODO @evlekht add transaction ID to log
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{})
 }

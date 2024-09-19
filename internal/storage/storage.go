@@ -8,9 +8,9 @@ import (
 	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/golang-migrate/migrate/v4/source/file" // required by migrate
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // sql driver, required
 )
 
 // TODO@ confirm that all db types are correct
@@ -18,8 +18,8 @@ var (
 	_ Storage = (*storage)(nil)
 	_ Session = (*session)(nil)
 
-	ErrNotFound        = errors.New("not found")
-	ErrAlreadyComitted = errors.New("already commited")
+	ErrNotFound         = errors.New("not found")
+	ErrAlreadyCommitted = errors.New("already committed")
 )
 
 type Storage interface {
@@ -89,7 +89,7 @@ func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) erro
 	}
 
 	version, dirty, err := migration.Version()
-	if err != nil && err != migrate.ErrNilVersion {
+	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 		s.logger.Error(err)
 		return err
 	}
@@ -100,14 +100,14 @@ func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) erro
 
 	err = migration.Up()
 	switch {
-	case err == migrate.ErrNoChange:
+	case errors.Is(err, migrate.ErrNoChange):
 		s.logger.Infof("No migrations needed")
 	case err != nil:
 		s.logger.Error(err)
 		return err
 	default:
 		newVersion, dirty, err := migration.Version()
-		if err != nil && err != migrate.ErrNilVersion {
+		if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
 			s.logger.Error(err)
 			return err
 		}
@@ -129,7 +129,7 @@ func (s *storage) prepare(ctx context.Context) error {
 	)
 }
 
-func (s *storage) Close(ctx context.Context) error {
+func (s *storage) Close(_ context.Context) error {
 	if err := s.db.Close(); err != nil {
 		s.logger.Error(err)
 		return err
@@ -149,26 +149,26 @@ func (s *storage) NewSession(ctx context.Context) (Session, error) {
 }
 
 type session struct {
-	storage  *storage
-	logger   logger.Logger
-	tx       *sqlx.Tx
-	commited bool
+	storage   *storage
+	logger    logger.Logger
+	tx        *sqlx.Tx
+	committed bool
 }
 
 func (s *session) Commit() error {
-	if s.commited {
-		return ErrAlreadyComitted
+	if s.committed {
+		return ErrAlreadyCommitted
 	}
 	if err := s.tx.Commit(); err != nil {
 		s.logger.Error(err)
 		return upgradeError(err)
 	}
-	s.commited = true
+	s.committed = true
 	return nil
 }
 
 func (s *session) Abort() {
-	if s.commited {
+	if s.committed {
 		return
 	}
 	if err := s.tx.Rollback(); err != nil {
@@ -177,19 +177,15 @@ func (s *session) Abort() {
 }
 
 func upgradeError(err error) error {
-	switch err {
-	case sql.ErrNoRows:
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
-	default:
-		return err
 	}
+	return err
 }
 
 func upgradeErrorAllowNotFound(err error) error {
-	switch err {
-	case sql.ErrNoRows:
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
-	default:
-		return err
 	}
+	return err
 }
