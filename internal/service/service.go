@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/chain4travel/camino-messenger-bot/pkg/cheques"
@@ -24,13 +25,17 @@ import (
 	"maunium.net/go/mautrix/id"
 )
 
-const networkFee uint64 = 100000 // nCAM
+const (
+	networkFee           uint64 = 100000 // nCAM
+	cashInTxIssueTimeout        = 10 * time.Second
+)
 
 var _ Service = (*service)(nil)
 
 type Service interface {
 	ProcessEvents(ctx context.Context, events []event.Event) error
 	CashIn(ctx context.Context) error
+	CheckCashInStatus(ctx context.Context) error
 }
 
 func NewService(
@@ -54,12 +59,6 @@ func NewService(
 		return nil, err
 	}
 
-	transactor, err := bind.NewKeyedTransactorWithChainID(networkFeeRecipientKey, chainID)
-	if err != nil {
-		logger.Error(err)
-		return nil, err
-	}
-
 	cmAccountsCache, err := lru.New[common.Address, *cmaccount.Cmaccount](10)
 	if err != nil {
 		logger.Error(err)
@@ -72,7 +71,7 @@ func NewService(
 		networkFeeRecipientKey:     networkFeeRecipientKey,
 		networkFeeRecipientAddress: contractAddr,
 		storage:                    storage,
-		transactor:                 transactor,
+		chainID:                    chainID,
 		minDurationUntilExpiration: big.NewInt(0).SetUint64(minDurationUntilExpiration),
 		cmAccounts:                 cmAccountsCache,
 	}, nil
@@ -84,7 +83,7 @@ type service struct {
 	storage                    storage.Storage
 	networkFeeRecipientKey     *ecdsa.PrivateKey
 	networkFeeRecipientAddress common.Address
-	transactor                 *bind.TransactOpts
+	chainID                    *big.Int
 	minDurationUntilExpiration *big.Int
 	cmAccounts                 *lru.Cache[common.Address, *cmaccount.Cmaccount]
 }
@@ -255,6 +254,7 @@ func (s *service) banUser(_ context.Context, _ id.UserID) error {
 	return nil
 }
 
+// TODO@ currently triggered by time, should also be triggered by unpaid amount threshold per each chequebook
 func (s *service) CashIn(ctx context.Context) error {
 	s.logger.Debug("Cashing in...")
 	defer s.logger.Debug("Finished cashing in")
@@ -266,70 +266,140 @@ func (s *service) CashIn(ctx context.Context) error {
 	}
 	defer session.Abort()
 
-	cheques, err := session.GetNotCashedChequebooks(ctx)
+	chequebooks, err := session.GetNotCashedChequebooks(ctx)
 	if err != nil {
 		s.logger.Errorf("failed to get not cashed cheques: %v", err)
 		return err
 	}
 
-	for _, cheque := range cheques {
-		s.logger.Debugf("Checking cheque %s status...", cheque)
+	wg := sync.WaitGroup{}
+	for _, chequebook := range chequebooks {
+		s.logger.Debugf("Checking cheque %s status...", chequebook)
 
-		updateChequebook := false
-		switch cheque.Status {
-		case models.ChequeTxStatusUnknown, models.ChequeTxStatusRejected:
-			cmAccount, err := s.getCMAccount(cheque.FromCMAccount)
+		ctx, _ := context.WithTimeout(ctx, cashInTxIssueTimeout)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			cmAccount, err := s.getCMAccount(chequebook.FromCMAccount)
 			if err != nil {
 				s.logger.Errorf("failed to get cmAccount contract instance: %v", err)
-				continue
+				return
 			}
+
+			transactor, err := bind.NewKeyedTransactorWithChainID(s.networkFeeRecipientKey, s.chainID)
+			if err != nil {
+				s.logger.Error(err)
+				return
+			}
+			transactor.Context = ctx
 
 			tx, err := cmAccount.CashInCheque(
-				s.transactor, // TODO@ timeout context ?
-				cheque.FromCMAccount,
-				cheque.ToCMAccount,
-				cheque.ToBot,
-				cheque.Counter,
-				cheque.Amount,
-				cheque.CreatedAt,
-				cheque.ExpiresAt,
-				cheque.Signature,
+				transactor,
+				chequebook.FromCMAccount,
+				chequebook.ToCMAccount,
+				chequebook.ToBot,
+				chequebook.Counter,
+				chequebook.Amount,
+				chequebook.CreatedAt,
+				chequebook.ExpiresAt,
+				chequebook.Signature,
 			)
 			if err != nil {
-				s.logger.Errorf("failed to cash in cheque %s: %v", cheque, err)
-				continue
+				s.logger.Errorf("failed to cash in cheque %s: %v", chequebook, err)
+				return
 			}
 
-			// TODO@ its old comment, reverify
-			// ! @evlekht if tx will be issued, but then storage will fail to persist it,
-			// ! tx is still issued and app service will fail to cash in this cheque next time
-			// ! cause on the node side it is already cashed in
-			cheque.TxID = tx.Hash()
-			cheque.Status = models.ChequeTxStatusProcessing
-			updateChequebook = true
-		case models.ChequeTxStatusProcessing:
-			// TODO@ move to eth event listener // listen for all not-fully-cashed chequebooks, even ones without txs // also check status on startup
-			res, err := s.ethClient.TransactionReceipt(ctx, cheque.TxID)
-			if err != nil {
-				s.logger.Errorf("failed to get cash in transaction receipt for cheque %s: %v", cheque, err)
-				continue
-			}
+			txID := tx.Hash()
+			chequebook.TxID = txID
+			chequebook.Status = models.ChequeTxStatusProcessing
 
-			txStatus := models.ChequeTxStatusRejected
-			if res.Status == types.ReceiptStatusSuccessful {
-				txStatus = models.ChequeTxStatusAccepted
-			}
+			// TODO @evlekht if tx will be issued, but then storage will fail to persist it,
+			// TODO tx is still issued and app service will fail to cash in this cheque next time
+			// TODO cause on the node side it is already cashed in
+			// TODO possible solution would be to do dry run, get txID, commit session with txID and status processing,
+			// TODO then do real run and also start goroutine with some timeout for processing status? also do same on startup
 
-			updateChequebook = cheque.Status != txStatus
-			cheque.Status = txStatus
-		}
+			// TODO @evlekht add txCreatedAt field to db and use it for timeout ?
 
-		if updateChequebook {
-			if err := session.UpdateChequebook(ctx, &cheque); err != nil {
-				s.logger.Errorf("failed to update cheque %s: %v", cheque, err)
-				return nil
+			if err := session.UpdateChequebook(ctx, &chequebook); err != nil {
+				s.logger.Errorf("failed to update cheque %s: %v", chequebook, err)
+				return
 			}
-		}
+		}()
+	}
+
+	wg.Wait()
+
+	if err := session.Commit(); err != nil {
+		s.logger.Errorf("failed to commit session: %v", err)
+		return err
+	}
+
+	for _, chequebook := range chequebooks {
+		txID := chequebook.TxID
+		go func() {
+			_ = s.checkCashInStatus(context.Background(), txID)
+		}()
+	}
+
+	return nil
+}
+
+func (s *service) CheckCashInStatus(ctx context.Context) error {
+	session, err := s.storage.NewSession(ctx)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	defer session.Abort()
+
+	chequebooks, err := session.GetChequebooksWithPendingTxs(ctx)
+	if err != nil {
+		s.logger.Errorf("failed to get not cashed cheques: %v", err)
+		return err
+	}
+
+	for _, chequebook := range chequebooks {
+		txID := chequebook.TxID
+		go func() {
+			_ = s.checkCashInStatus(ctx, txID)
+		}()
+	}
+
+	return nil
+}
+
+func (s *service) checkCashInStatus(ctx context.Context, txID common.Hash) error {
+	// TODO @evlekht timeout? what to do if timeouted?
+	res, err := waitMined(ctx, s.ethClient, txID)
+	if err != nil {
+		s.logger.Errorf("failed to get cash in transaction receipt %s: %v", txID, err)
+		return err
+	}
+
+	session, err := s.storage.NewSession(ctx)
+	if err != nil {
+		s.logger.Error(err)
+		return err
+	}
+	defer session.Abort()
+
+	chequebook, err := session.GetChequebookByTxID(ctx, txID)
+	if err != nil {
+		s.logger.Errorf("failed to get chequebook by txID %s: %v", txID, err)
+		return err
+	}
+
+	txStatus := models.ChequeTxStatusFromTxStatus(res.Status)
+	if chequebook.Status == txStatus {
+		return nil
+	}
+
+	chequebook.Status = txStatus
+	if err := session.UpdateChequebook(ctx, chequebook); err != nil {
+		s.logger.Errorf("failed to update chequebook %s: %v", chequebook, err)
+		return err
 	}
 
 	return session.Commit()
@@ -375,4 +445,22 @@ func chequebookID(cheque *cheques.SignedCheque) common.Hash {
 		cheque.ToCMAccount.Bytes(),
 		cheque.ToBot.Bytes(),
 	)
+}
+
+func waitMined(ctx context.Context, b bind.DeployBackend, txID common.Hash) (*types.Receipt, error) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		receipt, err := b.TransactionReceipt(ctx, txID)
+		if err == nil {
+			return receipt, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }

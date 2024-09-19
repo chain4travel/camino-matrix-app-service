@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/chain4travel/camino-synapse-app-service/internal/models"
+	"github.com/jmoiron/sqlx"
 )
-
-// TODO@ replace QueryxContext with select ?
 
 const jobsTableName = "jobs"
 
@@ -71,6 +70,11 @@ func (s *session) GetAllJobs(ctx context.Context) ([]*models.Job, error) {
 		jobs = append(jobs, modelFromJob(job))
 	}
 	return jobs, nil
+}
+
+type jobsStatements struct {
+	getAllJobs, getJobByName *sqlx.Stmt
+	addJob                   *sqlx.NamedStmt
 }
 
 func (s *storage) prepareJobsStmts(ctx context.Context) error {

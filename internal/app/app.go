@@ -77,6 +77,10 @@ func (app *App) Run(ctx context.Context) error {
 	})
 
 	g.Go(func() error {
+		return app.service.CheckCashInStatus(ctx)
+	})
+
+	g.Go(func() error {
 		return app.scheduler.Start(ctx)
 	})
 

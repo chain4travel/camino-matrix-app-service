@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/jmoiron/sqlx"
 )
 
 const chunkedMessagesTableName = "chunked_messages"
@@ -83,6 +85,11 @@ func (s *session) DeleteChunkedMessage(ctx context.Context, messageID string) er
 		return fmt.Errorf("error while deleting chunked message: expected to affect 1 row, but affected %d", rowsAffected)
 	}
 	return nil
+}
+
+type chunkedMessagesStatements struct {
+	getChunkNumbers, addMessageChunk, deleteChunkedMessage *sqlx.Stmt
+	addChunkNumbers                                        *sqlx.NamedStmt
 }
 
 func (s *storage) prepareChunkedMessagesStmts(ctx context.Context) error {

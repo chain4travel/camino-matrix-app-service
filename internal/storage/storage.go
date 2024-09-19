@@ -62,14 +62,9 @@ type storage struct {
 	logger logger.Logger
 	db     *sqlx.DB
 
-	getChequeByID, getNotCashedChequebooks *sqlx.Stmt
-	addChequebook, updateChequebook        *sqlx.NamedStmt
-
-	getChunkNumbers, addMessageChunk, deleteChunkedMessage *sqlx.Stmt
-	addChunkNumbers                                        *sqlx.NamedStmt
-
-	getAllJobs, getJobByName *sqlx.Stmt
-	addJob                   *sqlx.NamedStmt
+	chequebooksStatements
+	chunkedMessagesStatements
+	jobsStatements
 }
 
 func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) error {
@@ -122,7 +117,7 @@ func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) erro
 
 func (s *storage) prepare(ctx context.Context) error {
 	return errors.Join(
-		s.prepareChequesStmts(ctx),
+		s.prepareChequebooksStmts(ctx),
 		s.prepareChunkedMessagesStmts(ctx),
 		s.prepareJobsStmts(ctx),
 	)
