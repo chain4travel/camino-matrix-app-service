@@ -25,7 +25,6 @@ import (
 )
 
 const networkFee uint64 = 100000 // nCAM
-// TODO@ how big is msg.Metadata.RequestID ? how many chars?
 
 var _ Service = (*service)(nil)
 
@@ -111,7 +110,6 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 			}
 
 			if banSender {
-				// TODO@ persist with db, make it durable? not just call it from event receiver?
 				if err := s.banUser(ctx, evnt.Sender); err != nil {
 					return err
 				}
@@ -197,7 +195,13 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		}
 	}
 
-	// TODO@ what if we received fee for less chunks than message metadata implies? currently all chunks will be allowed
+	expectedAmount := networkFee * msg.Metadata.NumberOfChunks
+	if amount := cheque.Amount.Uint64(); amount < expectedAmount {
+		s.logger.Infof("cheque contain enough fee for all chunks (has %d, need %d, fee-per-chunk %d, chunks %d)",
+			amount, expectedAmount,
+			networkFee, msg.Metadata.NumberOfChunks)
+		return true, session.Commit()
+	}
 
 	ban := false
 	switch {
@@ -220,14 +224,6 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return false, err
 	}
 
-	expectedAmount := networkFee * msg.Metadata.NumberOfChunks
-	if amount := cheque.Amount.Uint64(); amount < expectedAmount {
-		s.logger.Infof("cheque contain enough fee for all chunks (has %d, need %d, fee-per-chunk %d, chunks %d)",
-			amount, expectedAmount,
-			networkFee, msg.Metadata.NumberOfChunks)
-		ban = true
-	}
-
 	return ban, session.Commit()
 }
 
@@ -248,10 +244,13 @@ func (s *service) verifyChequeWithContract(ctx context.Context, cheque *cheques.
 		cheque.ExpiresAt,
 		cheque.Signature,
 	)
-	return err == nil, err // TODO@ validity bool ?
+	if err != nil && err.Error() == "execution reverted" {
+		return false, nil
+	}
+	return err == nil, err
 }
 
-// TODO@ ban user (next ticket)
+// TODO @evlekht implement (next ticket) // persist with db, make it durable? not just call it from event receiver?
 func (s *service) banUser(_ context.Context, _ id.UserID) error {
 	return nil
 }
@@ -308,8 +307,8 @@ func (s *service) CashIn(ctx context.Context) error {
 			cheque.TxID = tx.Hash()
 			cheque.Status = models.ChequeTxStatusProcessing
 			updateChequebook = true
-		case models.ChequeTxStatusProcessing: // TODO@ move to eth event listener // listen for all not-fully-cashed chequebooks, even ones without txs
-			// TODO@ also check status on startup
+		case models.ChequeTxStatusProcessing:
+			// TODO@ move to eth event listener // listen for all not-fully-cashed chequebooks, even ones without txs // also check status on startup
 			res, err := s.ethClient.TransactionReceipt(ctx, cheque.TxID)
 			if err != nil {
 				s.logger.Errorf("failed to get cash in transaction receipt for cheque %s: %v", cheque, err)

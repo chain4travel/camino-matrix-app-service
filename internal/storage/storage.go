@@ -13,7 +13,6 @@ import (
 	_ "github.com/mattn/go-sqlite3" // sql driver, required
 )
 
-// TODO@ confirm that all db types are correct
 var (
 	_ Storage = (*storage)(nil)
 	_ Session = (*session)(nil)
