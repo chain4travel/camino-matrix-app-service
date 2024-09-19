@@ -1,7 +1,7 @@
 ###
 ### Stage 0: builder
 ###
-FROM golang:1.19.13-alpine3.18 AS builder
+FROM golang:1.23.1-alpine3.20 AS builder
 RUN apk update && apk upgrade && apk add build-base
 WORKDIR /camino-synapse-app-service
 
@@ -11,7 +11,7 @@ RUN go build -o build/
 ###
 ### Stage 1: runtime
 ###
-FROM alpine:3.18
+FROM alpine:3.20
 
 RUN apk add libc6-compat
 
