@@ -25,7 +25,7 @@ func New(ctx context.Context, logger logger.Logger, storage storage.Storage) Sch
 		storage:  storage,
 		logger:   logger,
 		registry: make(map[string]func()),
-		timers:   make(map[string]*time.Timer),
+		timers:   make(map[string]*timer),
 	}
 }
 
@@ -33,7 +33,7 @@ type scheduler struct {
 	logger       logger.Logger
 	storage      storage.Storage
 	registry     map[string]func()
-	timers       map[string]*time.Timer
+	timers       map[string]*timer
 	registryLock sync.RWMutex
 	timersLock   sync.RWMutex
 }
@@ -70,17 +70,20 @@ func (s *scheduler) Start(ctx context.Context) error {
 			timeUntilFirstExecution = job.ExecuteAt.Sub(now)
 		}
 
-		timer := time.NewTimer(timeUntilFirstExecution)
-		go func() {
-			for range timer.C { // TODO@ deal with timer stop, is it closing channel?
-				// TODO @evlekht panic handling?
-				if err := s.updateJobExecutionTime(ctx, jobName); err != nil {
-					s.logger.Errorf("failed to update job execution time: %v", err)
-					return // TODO @evlekht handle error, maybe retry
-				}
-				timer.Reset(period)
-				jobHandler()
+		handler := func() {
+			// TODO @evlekht panic handling?
+			if err := s.updateJobExecutionTime(ctx, jobName); err != nil {
+				s.logger.Errorf("failed to update job execution time: %v", err)
+				return // TODO @evlekht handle error, maybe retry ?
 			}
+			jobHandler()
+		}
+
+		timer := newTimer()
+		doneCh := timer.StartOnce(timeUntilFirstExecution, handler)
+		go func() {
+			<-doneCh
+			_ = timer.Start(period, handler)
 		}()
 
 		s.timersLock.Lock()
@@ -88,7 +91,7 @@ func (s *scheduler) Start(ctx context.Context) error {
 		s.timersLock.Unlock()
 	}
 
-	return session.Commit()
+	return nil
 }
 
 func (s *scheduler) Stop(_ context.Context) error {
