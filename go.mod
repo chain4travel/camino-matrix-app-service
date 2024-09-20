@@ -1,4 +1,4 @@
-module github.com/chain4travel/camino-synapse-app-service
+module github.com/chain4travel/camino-matrix-app-service
 
 go 1.23.1
 

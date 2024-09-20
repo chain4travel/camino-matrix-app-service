@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/app"
-	"github.com/chain4travel/camino-synapse-app-service/internal/config"
+	"github.com/chain4travel/camino-matrix-app-service/internal/app"
+	"github.com/chain4travel/camino-matrix-app-service/internal/config"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
-	"github.com/chain4travel/camino-synapse-app-service/internal/models"
-	"github.com/chain4travel/camino-synapse-app-service/internal/storage"
+	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
+	"github.com/chain4travel/camino-matrix-app-service/internal/models"
+	"github.com/chain4travel/camino-matrix-app-service/internal/storage"
 )
 
 var _ Scheduler = (*scheduler)(nil)

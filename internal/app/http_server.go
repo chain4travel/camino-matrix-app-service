@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
-	"github.com/chain4travel/camino-synapse-app-service/internal/service"
+	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
+	"github.com/chain4travel/camino-matrix-app-service/internal/service"
 	"maunium.net/go/mautrix/event"
 
 	"github.com/gin-gonic/gin"

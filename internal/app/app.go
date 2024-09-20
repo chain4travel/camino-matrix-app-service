@@ -3,11 +3,11 @@ package app
 import (
 	"context"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/config"
-	"github.com/chain4travel/camino-synapse-app-service/internal/logger"
-	"github.com/chain4travel/camino-synapse-app-service/internal/scheduler"
-	"github.com/chain4travel/camino-synapse-app-service/internal/service"
-	"github.com/chain4travel/camino-synapse-app-service/internal/storage"
+	"github.com/chain4travel/camino-matrix-app-service/internal/config"
+	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
+	"github.com/chain4travel/camino-matrix-app-service/internal/scheduler"
+	"github.com/chain4travel/camino-matrix-app-service/internal/service"
+	"github.com/chain4travel/camino-matrix-app-service/internal/storage"
 
 	"golang.org/x/sync/errgroup"
 )

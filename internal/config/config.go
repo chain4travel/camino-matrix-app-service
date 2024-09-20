@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	configFileName = "camino-synapse-app-service"
+	configFileName = "camino-matrix-app-service"
 
 	configFlagKey = "config"
 

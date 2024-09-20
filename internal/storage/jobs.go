@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chain4travel/camino-synapse-app-service/internal/models"
+	"github.com/chain4travel/camino-matrix-app-service/internal/models"
 	"github.com/jmoiron/sqlx"
 )
 

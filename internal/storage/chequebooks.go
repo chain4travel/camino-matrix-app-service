@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/chain4travel/camino-matrix-app-service/internal/models"
 	"github.com/chain4travel/camino-messenger-bot/pkg/cheques"
-	"github.com/chain4travel/camino-synapse-app-service/internal/models"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
 )
