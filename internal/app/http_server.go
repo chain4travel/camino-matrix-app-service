@@ -114,9 +114,9 @@ func middlewareRecover(logger logger.Logger) gin.HandlerFunc {
 	}
 }
 
-func middlewareLogger(_ logger.Logger) gin.HandlerFunc {
+func middlewareLogger(logger logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO@ debug-log incoming requests ?
+		logger.Debug(c.Request.Method, c.Request.URL.Path)
 		c.Next()
 	}
 }

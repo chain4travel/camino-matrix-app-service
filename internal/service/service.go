@@ -28,6 +28,7 @@ import (
 const (
 	networkFee           uint64 = 100000 // nCAM
 	cashInTxIssueTimeout        = 10 * time.Second
+	cmAccountsCacheSize         = 100
 )
 
 var _ Service = (*service)(nil)
@@ -59,7 +60,7 @@ func NewService(
 		return nil, err
 	}
 
-	cmAccountsCache, err := lru.New[common.Address, *cmaccount.Cmaccount](10)
+	cmAccountsCache, err := lru.New[common.Address, *cmaccount.Cmaccount](cmAccountsCacheSize)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
