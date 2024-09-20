@@ -29,7 +29,7 @@ type chunkedMessage struct {
 func (s *session) GetChunksNumbers(ctx context.Context, messageID string) (uint64, uint64, error) {
 	chunkedMessage := &chunkedMessage{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getChunkNumbers).GetContext(ctx, chunkedMessage, messageID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return 0, 0, upgradeErrorAllowNotFound(err)

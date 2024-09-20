@@ -92,7 +92,7 @@ func (s *session) GetChequebooksWithPendingTxs(ctx context.Context) ([]models.Ch
 func (s *session) GetChequebook(ctx context.Context, chequebookID common.Hash) (*models.Chequebook, error) {
 	chequebook := &chequebook{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getChequeByChequebookID).GetContext(ctx, chequebook, chequebookID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return nil, upgradeError(err)
@@ -103,7 +103,7 @@ func (s *session) GetChequebook(ctx context.Context, chequebookID common.Hash) (
 func (s *session) GetChequebookByTxID(ctx context.Context, txID common.Hash) (*models.Chequebook, error) {
 	chequebook := &chequebook{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getChequeByTxID).GetContext(ctx, chequebook, txID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return nil, upgradeError(err)

@@ -121,7 +121,7 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 
 func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, eventID id.EventID) (bool, error) {
 	s.logger.Debugf("Processing message %s...", eventID)
-	defer s.logger.Debug("Finished message %s")
+	defer s.logger.Debugf("Finished message %s", eventID)
 
 	session, err := s.storage.NewSession(ctx)
 	if err != nil {
@@ -131,7 +131,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	defer session.Abort()
 
 	storedChunksNumber, maxChunksNumber, err := session.GetChunksNumbers(ctx, msg.Metadata.RequestID)
-	if err != nil && errors.Is(err, storage.ErrNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Couldn't create storage session: %v", err)
 		return false, err
 	}
@@ -153,7 +153,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 
 	chequebookID := chequebookID(cheque)
 	chequebook, err := session.GetChequebook(ctx, chequebookID)
-	if err != nil && errors.Is(err, storage.ErrNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Failed to get cheque: %v", err)
 		return false, err
 	}
@@ -168,7 +168,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		big.NewInt(time.Now().Unix()),
 		s.minDurationUntilExpiration,
 	); err != nil {
-		s.logger.Errorf("Failed to verify cheque: %v", err)
+		s.logger.Infof("Failed to verify cheque: %v", err)
 		return true, nil
 	}
 

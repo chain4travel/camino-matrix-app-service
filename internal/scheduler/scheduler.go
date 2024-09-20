@@ -116,7 +116,7 @@ func (s *scheduler) Schedule(ctx context.Context, period time.Duration, jobName 
 	defer session.Abort()
 
 	job, err := session.GetJobByName(ctx, jobName)
-	if err != nil && errors.Is(err, storage.ErrNotFound) {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("failed to get job: %v", err)
 		return err
 	}

@@ -104,8 +104,8 @@ func (cr *configReader) readConfig(_ context.Context) (*Config, error) {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		var viperErr *viper.ConfigFileNotFoundError
-		if ok := errors.As(err, viperErr); ok {
+		var viperErr viper.ConfigFileNotFoundError
+		if ok := errors.As(err, &viperErr); ok {
 			cr.logger.Info("Config file not found")
 		} else {
 			cr.logger.Errorf("Error reading config file: %s", err)

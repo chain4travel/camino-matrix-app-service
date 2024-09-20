@@ -30,7 +30,7 @@ type job struct {
 func (s *session) GetJobByName(ctx context.Context, jobName string) (*models.Job, error) {
 	job := &job{}
 	if err := s.tx.StmtxContext(ctx, s.storage.getJobByName).GetContext(ctx, job, jobName); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if !errors.Is(err, sql.ErrNoRows) {
 			s.logger.Error(err)
 		}
 		return nil, upgradeError(err)
