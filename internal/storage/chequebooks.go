@@ -26,8 +26,7 @@ type ChequesStorage interface {
 	GetChequebooksWithPendingTxs(ctx context.Context) ([]models.Chequebook, error)
 	GetChequebook(ctx context.Context, chequebookID common.Hash) (*models.Chequebook, error)
 	GetChequebookByTxID(ctx context.Context, txID common.Hash) (*models.Chequebook, error)
-	AddChequebook(ctx context.Context, chequebook *models.Chequebook) error
-	UpdateChequebook(ctx context.Context, chequebook *models.Chequebook) error
+	UpsertChequebook(ctx context.Context, chequebook *models.Chequebook) error
 }
 
 type chequebook struct {
@@ -112,8 +111,8 @@ func (s *session) GetChequebookByTxID(ctx context.Context, txID common.Hash) (*m
 	return modelFromChequebook(chequebook)
 }
 
-func (s *session) AddChequebook(ctx context.Context, chequebook *models.Chequebook) error {
-	result, err := s.tx.NamedStmtContext(ctx, s.storage.addChequebook).
+func (s *session) UpsertChequebook(ctx context.Context, chequebook *models.Chequebook) error {
+	result, err := s.tx.NamedStmtContext(ctx, s.storage.upsertChequebook).
 		ExecContext(ctx, chequebookFromModel(chequebook))
 	if err != nil {
 		s.logger.Error(err)
@@ -128,26 +127,10 @@ func (s *session) AddChequebook(ctx context.Context, chequebook *models.Chequebo
 	return nil
 }
 
-func (s *session) UpdateChequebook(ctx context.Context, chequebook *models.Chequebook) error {
-	result, err := s.tx.NamedStmtContext(ctx, s.storage.updateChequebook).
-		ExecContext(ctx, chequebookFromModel(chequebook))
-	if err != nil {
-		s.logger.Error(err)
-		return upgradeError(err)
-	}
-	if rowsAffected, err := result.RowsAffected(); err != nil {
-		s.logger.Error(err)
-		return upgradeError(err)
-	} else if rowsAffected != 1 {
-		return fmt.Errorf("failed to update chequebook: expected to affect 1 row, but affected %d", rowsAffected)
-	}
-	return nil
-}
-
 type chequebooksStatements struct {
 	getNotCashedChequebooks, getChequebooksWithPendingTxs *sqlx.Stmt
 	getChequeByChequebookID, getChequeByTxID              *sqlx.Stmt
-	addChequebook, updateChequebook                       *sqlx.NamedStmt
+	upsertChequebook                                      *sqlx.NamedStmt
 }
 
 func (s *storage) prepareChequebooksStmts(ctx context.Context) error {
@@ -191,7 +174,7 @@ func (s *storage) prepareChequebooksStmts(ctx context.Context) error {
 	}
 	s.getChequeByTxID = getChequeByTxID
 
-	addChequebook, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
+	upsertChequebook, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
 		INSERT INTO %s (
 			chequebook_id,
 			from_cm_account,
@@ -213,29 +196,20 @@ func (s *storage) prepareChequebooksStmts(ctx context.Context) error {
 			:expires_at,
 			:signature
 		)
+		ON CONFLICT(chequebook_id)
+		DO UPDATE SET counter = excluded.counter,
+			amount            = excluded.amount,
+			created_at        = excluded.created_at,
+			expires_at        = excluded.expires_at,
+			signature         = excluded.signature,
+			tx_id             = excluded.tx_id,
+			status            = excluded.status
 	`, chequebooksTableName))
 	if err != nil {
 		s.logger.Error(err)
 		return err
 	}
-	s.addChequebook = addChequebook
-
-	updateChequebook, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
-		UPDATE %s
-		SET counter    = :counter,
-			amount     = :amount,
-			created_at = :created_at,
-			expires_at = :expires_at,
-			signature  = :signature,
-			tx_id      = :tx_id,
-			status     = :status
-		WHERE chequebook_id = :chequebook_id
-	`, chequebooksTableName))
-	if err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	s.updateChequebook = updateChequebook
+	s.upsertChequebook = upsertChequebook
 
 	return nil
 }

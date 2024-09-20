@@ -136,7 +136,7 @@ func (s *scheduler) Schedule(ctx context.Context, period time.Duration, jobName 
 		}
 	}
 
-	if err := session.AddJob(ctx, job); err != nil {
+	if err := session.UpsertJob(ctx, job); err != nil {
 		s.logger.Errorf("failed to store scheduled job: %v", err)
 		return err
 	}
@@ -166,7 +166,7 @@ func (s *scheduler) updateJobExecutionTime(ctx context.Context, jobName string) 
 
 	job.ExecuteAt = time.Now().Add(job.Period)
 
-	if err := session.AddJob(ctx, job); err != nil {
+	if err := session.UpsertJob(ctx, job); err != nil {
 		s.logger.Errorf("failed to store scheduled job: %v", err)
 		return err
 	}

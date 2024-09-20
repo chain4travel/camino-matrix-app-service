@@ -180,19 +180,10 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return true, nil
 	}
 
-	if chequebook == nil {
-		if err := session.AddChequebook(ctx, chequebookFromCheque(chequebookID, cheque)); err != nil {
-			s.logger.Errorf("Failed to store cheque: %v", err)
-			return false, err
-		}
-	} else {
-		if err := session.UpdateChequebook(ctx, &models.Chequebook{
-			SignedCheque: *cheque,
-			ChequebookID: chequebookID,
-		}); err != nil {
-			s.logger.Errorf("Failed to store cheque: %v", err)
-			return false, err
-		}
+	chequebook = chequebookFromCheque(chequebookID, cheque)
+	if err := session.UpsertChequebook(ctx, chequebook); err != nil {
+		s.logger.Errorf("Failed to store cheque: %v", err)
+		return false, err
 	}
 
 	expectedAmount := networkFee * msg.Metadata.NumberOfChunks
@@ -223,6 +214,8 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		s.logger.Errorf("Failed to store message chunk: %v", err)
 		return false, err
 	}
+
+	// TODO@ do cash in amount threshold reached? store unpaid amount in cheque?
 
 	return ban, session.Commit()
 }
@@ -255,7 +248,6 @@ func (s *service) banUser(_ context.Context, _ id.UserID) error {
 	return nil
 }
 
-// TODO@ currently triggered by time, should also be triggered by unpaid amount threshold per each chequebook
 func (s *service) CashIn(ctx context.Context) error {
 	s.logger.Debug("Cashing in...")
 	defer s.logger.Debug("Finished cashing in")
@@ -325,7 +317,7 @@ func (s *service) CashIn(ctx context.Context) error {
 
 			// TODO @evlekht add txCreatedAt field to db and use it for mining timeout ?
 
-			if err := session.UpdateChequebook(ctx, &chequebook); err != nil {
+			if err := session.UpsertChequebook(ctx, &chequebook); err != nil {
 				s.logger.Errorf("failed to update cheque %s: %v", chequebook, err)
 				return
 			}
@@ -400,7 +392,7 @@ func (s *service) checkCashInStatus(ctx context.Context, txID common.Hash) error
 	}
 
 	chequebook.Status = txStatus
-	if err := session.UpdateChequebook(ctx, chequebook); err != nil {
+	if err := session.UpsertChequebook(ctx, chequebook); err != nil {
 		s.logger.Errorf("failed to update chequebook %s: %v", chequebook, err)
 		return err
 	}

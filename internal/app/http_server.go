@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -103,11 +102,7 @@ func middlewareRecover(logger logger.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if r := recover(); r != nil {
-				err, ok := r.(error)
-				if !ok {
-					err = fmt.Errorf("%v", r)
-				}
-				logger.Errorf("PANIC recovered: %v", err)
+				logger.Errorf("panic recovered: %v", r)
 			}
 		}()
 		c.Next()

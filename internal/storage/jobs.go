@@ -17,7 +17,7 @@ var _ JobsStorage = (*session)(nil)
 
 type JobsStorage interface {
 	GetAllJobs(ctx context.Context) ([]*models.Job, error)
-	AddJob(ctx context.Context, job *models.Job) error
+	UpsertJob(ctx context.Context, job *models.Job) error
 	GetJobByName(ctx context.Context, jobName string) (*models.Job, error)
 }
 
@@ -38,8 +38,8 @@ func (s *session) GetJobByName(ctx context.Context, jobName string) (*models.Job
 	return modelFromJob(job), nil
 }
 
-func (s *session) AddJob(ctx context.Context, job *models.Job) error {
-	result, err := s.tx.NamedStmtContext(ctx, s.storage.addJob).
+func (s *session) UpsertJob(ctx context.Context, job *models.Job) error {
+	result, err := s.tx.NamedStmtContext(ctx, s.storage.upsertJob).
 		ExecContext(ctx, jobFromModel(job))
 	if err != nil {
 		s.logger.Error(err)
@@ -74,7 +74,7 @@ func (s *session) GetAllJobs(ctx context.Context) ([]*models.Job, error) {
 
 type jobsStatements struct {
 	getAllJobs, getJobByName *sqlx.Stmt
-	addJob                   *sqlx.NamedStmt
+	upsertJob                *sqlx.NamedStmt
 }
 
 func (s *storage) prepareJobsStmts(ctx context.Context) error {
@@ -88,7 +88,7 @@ func (s *storage) prepareJobsStmts(ctx context.Context) error {
 	}
 	s.getJobByName = getJobByName
 
-	addJob, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
+	upsertJob, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
 		INSERT INTO %s (
 			name,
 			execute_at,
@@ -105,7 +105,7 @@ func (s *storage) prepareJobsStmts(ctx context.Context) error {
 		s.logger.Error(err)
 		return err
 	}
-	s.addJob = addJob
+	s.upsertJob = upsertJob
 
 	getAllJobs, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
 		SELECT * FROM %s
