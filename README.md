@@ -1,14 +1,17 @@
 ## Docker
 Build docker with:
 ```
-docker build -t c4tplatform/camino-synapse-app-service .
+docker build -t c4tplatform/camino-matrix-app-service .
 ```
 
 ## Configs
+# Camino-conduit app-service registration
+Camino-conduit will register app-service on start-up
+
 ### Synapse app-service registration
 Synapse server must be provided with synapse app-service registration config at `files/matrix/.synapse/camino.yaml`.
 
-See `camino.yaml.example`:
+See `example/synapse/camino.yaml`:
 ```yaml
 id: camino
 url: http://host.docker.internal:5000
@@ -28,18 +31,19 @@ namespaces:
 ```
 
 ### App-service config
-App-service itself has its own config. Docker container expects this config to be at `/camino-synapse-app-service/camino-synapse-app-service.yaml`.
+App-service itself has its own config. Docker container expects this config to be at `/camino-matrix-app-service/camino-matrix-app-service.yaml`.
 
-See `camino-synapse-app-service.yaml.example`:
+See `example/camino-matrix-app-service.yaml`:
 ```yaml
-cashout_period: 30s
+cash_in_period: 30s # period for cash in
 camino_node_host: http://localhost:19651
-matrix_host: http://localhost:8008
 http_port: 5000
-access_token: wfghWEGh3wgWHEf3478sHFWE
 matrix_access_token: ugw8243igya57aaABGFfgeyu
 log_level: debug # debug or info
 db_path: db.db
 db_name: camino_synapse_app_service
 migrations_path: file://./migrations # schema is mandatory!
+cm_account_contract_address: 0x4626cb544230e4d13fb72950501ff91740116a0a # cm account that will be network fee recipient
+network_fee_recipient_key: <private key in hex format>
+min_duration_until_expiration: 30s # minimum valid duration until expiration expiration for received cheques
 ```

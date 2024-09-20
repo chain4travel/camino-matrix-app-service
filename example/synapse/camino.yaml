@@ -1,3 +1,4 @@
+# example app-service registration yaml for synapse
 id: camino
 url: http://host.docker.internal:5000
 as_token: wfghWEGh3wgWHEf3478sHFWE
