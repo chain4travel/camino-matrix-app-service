@@ -320,7 +320,7 @@ func (s *service) CashIn(ctx context.Context) error {
 
 			// TODO @evlekht add txCreatedAt field to db and use it for mining timeout ?
 
-			if err := session.UpsertChequebook(ctx, &chequebook); err != nil {
+			if err := session.UpsertChequebook(ctx, chequebook); err != nil {
 				s.logger.Errorf("failed to update cheque %s: %v", chequebook, err)
 				return
 			}

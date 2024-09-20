@@ -22,8 +22,8 @@ var (
 )
 
 type ChequesStorage interface {
-	GetNotCashedChequebooks(ctx context.Context) ([]models.Chequebook, error)
-	GetChequebooksWithPendingTxs(ctx context.Context) ([]models.Chequebook, error)
+	GetNotCashedChequebooks(ctx context.Context) ([]*models.Chequebook, error)
+	GetChequebooksWithPendingTxs(ctx context.Context) ([]*models.Chequebook, error)
 	GetChequebook(ctx context.Context, chequebookID common.Hash) (*models.Chequebook, error)
 	GetChequebookByTxID(ctx context.Context, txID common.Hash) (*models.Chequebook, error)
 	UpsertChequebook(ctx context.Context, chequebook *models.Chequebook) error
@@ -43,8 +43,8 @@ type chequebook struct {
 	Status        *models.ChequeTxStatus `db:"status"`
 }
 
-func (s *session) GetNotCashedChequebooks(ctx context.Context) ([]models.Chequebook, error) {
-	chequebooks := []models.Chequebook{}
+func (s *session) GetNotCashedChequebooks(ctx context.Context) ([]*models.Chequebook, error) {
+	chequebooks := []*models.Chequebook{}
 	rows, err := s.tx.StmtxContext(ctx, s.storage.getNotCashedChequebooks).QueryxContext(ctx)
 	if err != nil {
 		s.logger.Error(err)
@@ -61,13 +61,13 @@ func (s *session) GetNotCashedChequebooks(ctx context.Context) ([]models.Chequeb
 			s.logger.Errorf("failed to parse not cashed chequebook: %v", err)
 			continue
 		}
-		chequebooks = append(chequebooks, *model)
+		chequebooks = append(chequebooks, model)
 	}
 	return chequebooks, nil
 }
 
-func (s *session) GetChequebooksWithPendingTxs(ctx context.Context) ([]models.Chequebook, error) {
-	chequebooks := []models.Chequebook{}
+func (s *session) GetChequebooksWithPendingTxs(ctx context.Context) ([]*models.Chequebook, error) {
+	chequebooks := []*models.Chequebook{}
 	rows, err := s.tx.StmtxContext(ctx, s.storage.getChequebooksWithPendingTxs).QueryxContext(ctx)
 	if err != nil {
 		s.logger.Error(err)
@@ -84,7 +84,7 @@ func (s *session) GetChequebooksWithPendingTxs(ctx context.Context) ([]models.Ch
 			s.logger.Errorf("failed to parse chequebook with pending tx: %v", err)
 			continue
 		}
-		chequebooks = append(chequebooks, *model)
+		chequebooks = append(chequebooks, model)
 	}
 	return chequebooks, nil
 }
@@ -184,7 +184,9 @@ func (s *storage) prepareChequebooksStmts(ctx context.Context) error {
 			amount,
 			created_at,
 			expires_at,
-			signature
+			signature,
+			tx_id,
+			status
 		) VALUES (
 			:chequebook_id,
 			:from_cm_account,
@@ -194,7 +196,9 @@ func (s *storage) prepareChequebooksStmts(ctx context.Context) error {
 			:amount,
 			:created_at,
 			:expires_at,
-			:signature
+			:signature,
+			:tx_id,
+			:status
 		)
 		ON CONFLICT(chequebook_id)
 		DO UPDATE SET counter = excluded.counter,
