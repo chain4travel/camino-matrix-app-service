@@ -152,6 +152,8 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	}
 
 	chequebookID := chequebookID(cheque)
+	s.logger.Debugf("Received cheque %s %+v", chequebookID, cheque.Cheque)
+
 	chequebook, err := session.GetChequebook(ctx, chequebookID)
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Failed to get cheque: %v", err)
@@ -194,6 +196,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return true, session.Commit()
 	}
 
+	err = nil
 	ban := false
 	switch {
 	case storedChunksNumber == 0 && msg.Metadata.ChunkIndex != 0:
@@ -215,7 +218,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return false, err
 	}
 
-	// TODO@ do cash in amount threshold reached? store unpaid amount in cheque?
+	// TODO @evlekht do cash in amount threshold reached? store unpaid amount in cheque?
 
 	return ban, session.Commit()
 }

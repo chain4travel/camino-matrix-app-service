@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
+
 func newServer(_ context.Context, logger logger.Logger, hsAccessToken, port string, service service.Service) *server {
 	ginRouter := gin.New()
 	s := &server{
