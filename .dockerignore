@@ -13,3 +13,4 @@ LICENSE
 Dockerfile
 build
 
+coverage.out

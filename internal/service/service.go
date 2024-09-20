@@ -276,7 +276,6 @@ func (s *service) CashIn(ctx context.Context) error {
 	for _, chequebook := range chequebooks {
 		s.logger.Debugf("Checking cheque %s status...", chequebook)
 
-		ctx, _ := context.WithTimeout(ctx, cashInTxIssueTimeout)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -292,7 +291,10 @@ func (s *service) CashIn(ctx context.Context) error {
 				s.logger.Error(err)
 				return
 			}
-			transactor.Context = ctx
+
+			timedCtx, cancel := context.WithTimeout(ctx, cashInTxIssueTimeout)
+			defer cancel()
+			transactor.Context = timedCtx
 
 			tx, err := cmAccount.CashInCheque(
 				transactor,
@@ -317,10 +319,10 @@ func (s *service) CashIn(ctx context.Context) error {
 			// TODO @evlekht if tx will be issued, but then storage will fail to persist it,
 			// TODO tx is still issued and app service will fail to cash in this cheque next time
 			// TODO cause on the node side it is already cashed in
-			// TODO possible solution would be to do dry run, get txID, commit session with txID and status processing,
-			// TODO then do real run and also start goroutine with some timeout for processing status? also do same on startup
+			// TODO possible solution would be to do dry run, get txID, commit session with txID and status "processing",
+			// TODO then do real run? also do same on startup
 
-			// TODO @evlekht add txCreatedAt field to db and use it for timeout ?
+			// TODO @evlekht add txCreatedAt field to db and use it for mining timeout ?
 
 			if err := session.UpdateChequebook(ctx, &chequebook); err != nil {
 				s.logger.Errorf("failed to update cheque %s: %v", chequebook, err)
