@@ -12,5 +12,6 @@ LICENSE
 
 Dockerfile
 build
+bin
 
 coverage.out

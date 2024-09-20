@@ -1,10 +1,11 @@
 #!/bin/bash
 
-go build -o build/camino-matrix-app-service main.go
 
-if [ $? -eq 0 ]; then
-    echo "Build successful!"
-else
+
+if ! go build -o build/camino-matrix-app-service main.go
+then
     echo "Build failed."
+else
+    echo "Build successful!"
     exit 1
 fi
