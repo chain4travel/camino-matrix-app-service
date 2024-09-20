@@ -200,8 +200,8 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		// Not first chunk, but no first chunk stored
 		s.logger.Infof("event (%s) is not the first chunk, but there is no first chunk stored", eventID)
 		ban = true
-	case storedChunksNumber == 0 && msg.Metadata.ChunkIndex == 0:
-		// First chunk was received
+	case storedChunksNumber == 0 && msg.Metadata.ChunkIndex == 0 && msg.Metadata.NumberOfChunks > 1:
+		// First chunk of multi-chunk message was received
 		err = session.AddChunkedMessage(ctx, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks)
 	case storedChunksNumber == maxChunksNumber-1:
 		// Last chunk was received
