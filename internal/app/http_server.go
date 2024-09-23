@@ -95,6 +95,7 @@ func middlewareBearerAuth(token string) gin.HandlerFunc {
 		auth := c.GetHeader("Authorization")
 		if len(auth) > l+1 && strings.EqualFold(auth[:l], bearer) && auth[l+1:] == token {
 			c.Next()
+			return
 		}
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 	}
