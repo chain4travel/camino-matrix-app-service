@@ -55,11 +55,10 @@ func (s *scheduler) Start(ctx context.Context) error {
 	}
 
 	for _, job := range jobs {
-		s.registryLock.RLock()
-		jobHandler, ok := s.registry[job.Name]
-		s.registryLock.RUnlock()
-		if !ok {
-			return fmt.Errorf("job %s not found in registry", job.Name)
+		jobHandler, err := s.getJobHandler(job.Name)
+		if err != nil {
+			s.logger.Errorf("failed to get job handler: %v", err)
+			return err
 		}
 
 		jobName := job.Name
@@ -87,9 +86,7 @@ func (s *scheduler) Start(ctx context.Context) error {
 			_ = timer.Start(period, handler)
 		}()
 
-		s.timersLock.Lock()
-		s.timers[job.Name] = timer
-		s.timersLock.Unlock()
+		s.setJobTimer(job.Name, timer)
 	}
 
 	return nil
@@ -177,4 +174,20 @@ func (s *scheduler) updateJobExecutionTime(ctx context.Context, jobName string) 
 	}
 
 	return nil
+}
+
+func (s *scheduler) getJobHandler(jobName string) (func(), error) {
+	s.registryLock.RLock()
+	jobHandler, ok := s.registry[jobName]
+	s.registryLock.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("job %s not found in registry", jobName)
+	}
+	return jobHandler, nil
+}
+
+func (s *scheduler) setJobTimer(jobName string, t *timer) {
+	s.timersLock.Lock()
+	s.timers[jobName] = t
+	s.timersLock.Unlock()
 }

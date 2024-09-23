@@ -19,38 +19,38 @@ const (
 
 	configFlagKey = "config"
 
-	cashInPeriodKey             = "cash_in_period"
-	caminoNodeHostKey           = "camino_node_host"
-	httPortKey                  = "http_port"
-	matrixAccessTokenKey        = "matrix_access_token"
-	logLevelKey                 = "log_level"
-	dbPathKey                   = "db_path"
-	dbNameKey                   = "db_name"
-	migrationsPathKey           = "migrations_path"
-	cmAccountContractAddressKey = "cm_account_contract_address"
-	networkFeeRecipientKeyKey   = "network_fee_recipient_key"
+	flagKeyCashInPeriod             = "cash_in_period"
+	flagKeyCChainRPCURL             = "c_chain_rpc_url"
+	flagKeyHTTPPort                 = "http_port"
+	flagKeyMatrixAccessToken        = "matrix_access_token"
+	flagKeyLogLevel                 = "log_level"
+	flagKeyDBPath                   = "db_path"
+	flagKeyDBName                   = "db_name"
+	flagKeyMigrationsPath           = "migrations_path"
+	flagKeyCMAccountContractAddress = "cm_account_contract_address"
+	flagKeyNetworkFeeRecipientKey   = "network_fee_recipient_key"
 )
 
 func BindFlags(cmd *cobra.Command) error {
 	cmd.PersistentFlags().String(configFlagKey, ".", "path to config file dir")
 
-	cmd.PersistentFlags().String(cashInPeriodKey, ".", "Cash-in period.")
-	cmd.PersistentFlags().String(caminoNodeHostKey, ".", "Camino node host.")
-	cmd.PersistentFlags().String(httPortKey, ".", "App-service http port.")
-	cmd.PersistentFlags().String(matrixAccessTokenKey, ".", "Access token that matrix will use in requests to app-service.")
-	cmd.PersistentFlags().String(logLevelKey, ".", "Log level.")
-	cmd.PersistentFlags().String(dbPathKey, ".", "Path to database.")
-	cmd.PersistentFlags().String(dbNameKey, ".", "Database name.")
-	cmd.PersistentFlags().String(migrationsPathKey, ".", "Path to database migrations folder.")
-	cmd.PersistentFlags().String(cmAccountContractAddressKey, ".", "CM account contract address.")
-	cmd.PersistentFlags().String(networkFeeRecipientKeyKey, ".", "Network fee recipient key.")
+	cmd.PersistentFlags().String(flagKeyCashInPeriod, ".", "Cash-in period.")
+	cmd.PersistentFlags().String(flagKeyCChainRPCURL, ".", "Camino c-chain rpc url.")
+	cmd.PersistentFlags().String(flagKeyHTTPPort, ".", "App-service http port.")
+	cmd.PersistentFlags().String(flagKeyMatrixAccessToken, ".", "Access token that matrix will use in requests to app-service.")
+	cmd.PersistentFlags().String(flagKeyLogLevel, ".", "Log level.")
+	cmd.PersistentFlags().String(flagKeyDBPath, ".", "Path to database.")
+	cmd.PersistentFlags().String(flagKeyDBName, ".", "Database name.")
+	cmd.PersistentFlags().String(flagKeyMigrationsPath, ".", "Path to database migrations folder.")
+	cmd.PersistentFlags().String(flagKeyCMAccountContractAddress, ".", "CM account contract address.")
+	cmd.PersistentFlags().String(flagKeyNetworkFeeRecipientKey, ".", "Network fee recipient key.")
 
 	return viper.BindPFlags(cmd.PersistentFlags())
 }
 
 type UnparsedConfig struct {
 	CashInPeriod               time.Duration `mapstructure:"cash_in_period"`
-	CaminoNodeHost             string        `mapstructure:"camino_node_host"`
+	CChainRPCURL               string        `mapstructure:"c_chain_rpc_url"`
 	HTTPPort                   string        `mapstructure:"http_port"`
 	MatrixAccessToken          string        `mapstructure:"matrix_access_token"`
 	LogLevel                   string        `mapstructure:"log_level"`
@@ -64,7 +64,7 @@ type UnparsedConfig struct {
 
 type Config struct {
 	CashInPeriod               time.Duration
-	CaminoNodeHost             url.URL
+	CChainRPCURL               url.URL
 	HTTPPort                   string
 	MatrixAccessToken          string
 	LogLevel                   string
@@ -128,15 +128,15 @@ func (cr *configReader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 		return nil, err
 	}
 
-	nodeURL, err := url.Parse(cfg.CaminoNodeHost)
+	cChainRPCURL, err := url.Parse(cfg.CChainRPCURL)
 	if err != nil {
-		cr.logger.Errorf("Error parsing CaminoNodeHost URL: %s", err)
+		cr.logger.Errorf("Error parsing C-Chain RPC URL: %s", err)
 		return nil, err
 	}
 
 	return &Config{
 		CashInPeriod:               cfg.CashInPeriod,
-		CaminoNodeHost:             *nodeURL,
+		CChainRPCURL:               *cChainRPCURL,
 		HTTPPort:                   cfg.HTTPPort,
 		MatrixAccessToken:          cfg.MatrixAccessToken,
 		LogLevel:                   cfg.LogLevel,

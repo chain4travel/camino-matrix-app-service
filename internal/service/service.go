@@ -42,13 +42,13 @@ type Service interface {
 func NewService(
 	ctx context.Context,
 	logger logger.Logger,
-	nodeURI url.URL,
+	cChainRPCURL url.URL,
 	contractAddr common.Address,
 	networkFeeRecipientKey *ecdsa.PrivateKey,
 	minDurationUntilExpiration uint64,
 	storage storage.Storage,
 ) (Service, error) {
-	ethClient, err := ethclient.Dial(nodeURI.String() + "/ext/bc/C/rpc")
+	ethClient, err := ethclient.Dial(cChainRPCURL.String())
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -119,6 +119,8 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 	return nil
 }
 
+// processMessage extracts network fee cheque, verifies it and stores it in the database.
+// Returns true if cheque is not valid or not covering all message chunks, indicating that sender should be banned
 func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, eventID id.EventID) (bool, error) {
 	s.logger.Debugf("Processing message %s...", eventID)
 	defer s.logger.Debugf("Finished message %s", eventID)

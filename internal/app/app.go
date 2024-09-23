@@ -31,7 +31,7 @@ func NewApp(ctx context.Context, logger logger.Logger, cfg *config.Config) (*App
 	service, err := service.NewService(
 		ctx,
 		logger,
-		cfg.CaminoNodeHost,
+		cfg.CChainRPCURL,
 		cfg.CMAccountContractAddress,
 		cfg.NetworkFeeRecipientKey,
 		cfg.MinDurationUntilExpiration,

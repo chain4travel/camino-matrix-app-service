@@ -1,6 +1,6 @@
 # example config
 cash_in_period: 30s # period for cash in
-camino_node_host: http://localhost:19651
+c_chain_rpc_url: http://localhost:19651/ext/bc/C/rpc
 http_port: 5000
 matrix_access_token: ugw8243igya57aaABGFfgeyu
 log_level: debug # debug or info
