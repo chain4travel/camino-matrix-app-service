@@ -5,7 +5,7 @@ http_port: 5000
 matrix_access_token: ugw8243igya57aaABGFfgeyu
 log_level: debug # debug or info
 db_path: db.db
-db_name: camino_synapse_app_service
+db_name: camino_matrix_app_service
 migrations_path: file://./migrations # schema is mandatory!
 cm_account_contract_address: 0x4626cb544230e4d13fb72950501ff91740116a0a # cm account that will be network fee recipient
 network_fee_recipient_key: <private key in hex format>
