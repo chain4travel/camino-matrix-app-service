@@ -153,18 +153,18 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return true, nil
 	}
 
-	chequebookID := chequebookID(cheque)
-	s.logger.Debugf("Received cheque %s %+v", chequebookID, cheque.Cheque)
+	chequeRecordID := chequeRecordID(cheque)
+	s.logger.Debugf("Received cheque %s %+v", chequeRecordID, cheque.Cheque)
 
-	chequebook, err := session.GetChequebook(ctx, chequebookID)
+	chequeRecord, err := session.GetChequeRecord(ctx, chequeRecordID)
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		s.logger.Errorf("Failed to get cheque: %v", err)
 		return false, err
 	}
 
 	var previousCheque *cheques.SignedCheque
-	if chequebook != nil {
-		previousCheque = &chequebook.SignedCheque
+	if chequeRecord != nil {
+		previousCheque = &chequeRecord.SignedCheque
 	}
 	if err := cheques.VerifyCheque(
 		previousCheque,
@@ -184,8 +184,8 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		return true, nil
 	}
 
-	chequebook = chequebookFromCheque(chequebookID, cheque)
-	if err := session.UpsertChequebook(ctx, chequebook); err != nil {
+	chequeRecord = chequeRecordFromCheque(chequeRecordID, cheque)
+	if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
 		s.logger.Errorf("Failed to store cheque: %v", err)
 		return false, err
 	}
@@ -264,21 +264,21 @@ func (s *service) CashIn(ctx context.Context) error {
 	}
 	defer session.Abort()
 
-	chequebooks, err := session.GetNotCashedChequebooks(ctx)
+	chequeRecords, err := session.GetNotCashedChequeRecords(ctx)
 	if err != nil {
 		s.logger.Errorf("failed to get not cashed cheques: %v", err)
 		return err
 	}
 
 	wg := sync.WaitGroup{}
-	for _, chequebook := range chequebooks {
-		s.logger.Debugf("Checking cheque %s status...", chequebook)
+	for _, chequeRecord := range chequeRecords {
+		s.logger.Debugf("Checking cheque %s status...", chequeRecord)
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 
-			cmAccount, err := s.getCMAccount(chequebook.FromCMAccount)
+			cmAccount, err := s.getCMAccount(chequeRecord.FromCMAccount)
 			if err != nil {
 				s.logger.Errorf("failed to get cmAccount contract instance: %v", err)
 				return
@@ -296,23 +296,23 @@ func (s *service) CashIn(ctx context.Context) error {
 
 			tx, err := cmAccount.CashInCheque(
 				transactor,
-				chequebook.FromCMAccount,
-				chequebook.ToCMAccount,
-				chequebook.ToBot,
-				chequebook.Counter,
-				chequebook.Amount,
-				chequebook.CreatedAt,
-				chequebook.ExpiresAt,
-				chequebook.Signature,
+				chequeRecord.FromCMAccount,
+				chequeRecord.ToCMAccount,
+				chequeRecord.ToBot,
+				chequeRecord.Counter,
+				chequeRecord.Amount,
+				chequeRecord.CreatedAt,
+				chequeRecord.ExpiresAt,
+				chequeRecord.Signature,
 			)
 			if err != nil {
-				s.logger.Errorf("failed to cash in cheque %s: %v", chequebook, err)
+				s.logger.Errorf("failed to cash in cheque %s: %v", chequeRecord, err)
 				return
 			}
 
 			txID := tx.Hash()
-			chequebook.TxID = txID
-			chequebook.Status = models.ChequeTxStatusProcessing
+			chequeRecord.TxID = txID
+			chequeRecord.Status = models.ChequeTxStatusProcessing
 
 			// TODO @evlekht if tx will be issued, but then storage will fail to persist it,
 			// TODO tx is still issued and app service will fail to cash in this cheque next time
@@ -322,8 +322,8 @@ func (s *service) CashIn(ctx context.Context) error {
 
 			// TODO @evlekht add txCreatedAt field to db and use it for mining timeout ?
 
-			if err := session.UpsertChequebook(ctx, chequebook); err != nil {
-				s.logger.Errorf("failed to update cheque %s: %v", chequebook, err)
+			if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
+				s.logger.Errorf("failed to update cheque %s: %v", chequeRecord, err)
 				return
 			}
 		}()
@@ -336,8 +336,8 @@ func (s *service) CashIn(ctx context.Context) error {
 		return err
 	}
 
-	for _, chequebook := range chequebooks {
-		txID := chequebook.TxID
+	for _, chequeRecord := range chequeRecords {
+		txID := chequeRecord.TxID
 		go func() {
 			_ = s.checkCashInStatus(context.Background(), txID)
 		}()
@@ -354,14 +354,14 @@ func (s *service) CheckCashInStatus(ctx context.Context) error {
 	}
 	defer session.Abort()
 
-	chequebooks, err := session.GetChequebooksWithPendingTxs(ctx)
+	chequeRecords, err := session.GetChequeRecordsWithPendingTxs(ctx)
 	if err != nil {
 		s.logger.Errorf("failed to get not cashed cheques: %v", err)
 		return err
 	}
 
-	for _, chequebook := range chequebooks {
-		txID := chequebook.TxID
+	for _, chequeRecord := range chequeRecords {
+		txID := chequeRecord.TxID
 		go func() {
 			_ = s.checkCashInStatus(ctx, txID)
 		}()
@@ -385,20 +385,20 @@ func (s *service) checkCashInStatus(ctx context.Context, txID common.Hash) error
 	}
 	defer session.Abort()
 
-	chequebook, err := session.GetChequebookByTxID(ctx, txID)
+	chequeRecord, err := session.GetChequeRecordByTxID(ctx, txID)
 	if err != nil {
-		s.logger.Errorf("failed to get chequebook by txID %s: %v", txID, err)
+		s.logger.Errorf("failed to get chequeRecord by txID %s: %v", txID, err)
 		return err
 	}
 
 	txStatus := models.ChequeTxStatusFromTxStatus(res.Status)
-	if chequebook.Status == txStatus {
+	if chequeRecord.Status == txStatus {
 		return nil
 	}
 
-	chequebook.Status = txStatus
-	if err := session.UpsertChequebook(ctx, chequebook); err != nil {
-		s.logger.Errorf("failed to update chequebook %s: %v", chequebook, err)
+	chequeRecord.Status = txStatus
+	if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
+		s.logger.Errorf("failed to update chequeRecord %s: %v", chequeRecord, err)
 		return err
 	}
 
@@ -421,8 +421,8 @@ func (s *service) getCMAccount(address common.Address) (*cmaccount.Cmaccount, er
 	return cmAccount, nil
 }
 
-func chequebookFromCheque(chequebookID common.Hash, cheque *cheques.SignedCheque) *models.Chequebook {
-	return &models.Chequebook{
+func chequeRecordFromCheque(chequeRecordID common.Hash, cheque *cheques.SignedCheque) *models.ChequeRecord {
+	return &models.ChequeRecord{
 		SignedCheque: cheques.SignedCheque{
 			Cheque: cheques.Cheque{
 				FromCMAccount: cheque.FromCMAccount,
@@ -435,11 +435,11 @@ func chequebookFromCheque(chequebookID common.Hash, cheque *cheques.SignedCheque
 			},
 			Signature: cheque.Signature,
 		},
-		ChequebookID: chequebookID,
+		ChequeRecordID: chequeRecordID,
 	}
 }
 
-func chequebookID(cheque *cheques.SignedCheque) common.Hash {
+func chequeRecordID(cheque *cheques.SignedCheque) common.Hash {
 	return crypto.Keccak256Hash(
 		cheque.FromCMAccount.Bytes(),
 		cheque.ToCMAccount.Bytes(),

@@ -39,13 +39,13 @@ func ChequeTxStatusFromTxStatus(txStatus uint64) ChequeTxStatus {
 	return ChequeTxStatusRejected
 }
 
-type Chequebook struct {
+type ChequeRecord struct {
 	cheques.SignedCheque
-	ChequebookID common.Hash
-	TxID         common.Hash
-	Status       ChequeTxStatus
+	ChequeRecordID common.Hash
+	TxID           common.Hash
+	Status         ChequeTxStatus
 }
 
-func (c Chequebook) String() string {
-	return fmt.Sprintf("{ID: %s, txID %s, status: %s, cheque: %+v}", c.ChequebookID.Hex(), c.TxID.Hex(), c.Status, c.Cheque)
+func (c ChequeRecord) String() string {
+	return fmt.Sprintf("{ID: %s, txID %s, status: %s, cheque: %+v}", c.ChequeRecordID.Hex(), c.TxID.Hex(), c.Status, c.Cheque)
 }

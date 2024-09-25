@@ -1,5 +1,5 @@
-CREATE TABLE chequebooks (
-    chequebook_id    VARBINARY(32)  NOT NULL PRIMARY KEY,
+CREATE TABLE cheque_records (
+    cheque_record_id    VARBINARY(32)  NOT NULL PRIMARY KEY,
     from_cm_account  VARBINARY(20)  NOT NULL,
     to_cm_account    VARBINARY(20)  NOT NULL,
     to_bot           VARBINARY(20)  NOT NULL,

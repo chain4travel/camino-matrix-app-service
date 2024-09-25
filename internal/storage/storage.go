@@ -62,7 +62,7 @@ type storage struct {
 	logger logger.Logger
 	db     *sqlx.DB
 
-	chequebooksStatements
+	chequeRecordsStatements
 	chunkedMessagesStatements
 	jobsStatements
 }
@@ -117,7 +117,7 @@ func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) erro
 
 func (s *storage) prepare(ctx context.Context) error {
 	return errors.Join(
-		s.prepareChequebooksStmts(ctx),
+		s.prepareChequeRecordsStmts(ctx),
 		s.prepareChunkedMessagesStmts(ctx),
 		s.prepareJobsStmts(ctx),
 	)
