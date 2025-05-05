@@ -5,11 +5,9 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
-	"net/url"
 	"sync"
 	"time"
 
-	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
 	"github.com/chain4travel/camino-matrix-app-service/internal/models"
 	"github.com/chain4travel/camino-matrix-app-service/internal/storage"
 	"github.com/chain4travel/camino-messenger-bot/pkg/cheques"
@@ -21,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"go.uber.org/zap"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -41,14 +40,14 @@ type Service interface {
 
 func NewService(
 	ctx context.Context,
-	logger logger.Logger,
-	cChainRPCURL url.URL,
+	logger *zap.SugaredLogger,
+	cChainRPCURL string,
 	contractAddr common.Address,
 	networkFeeRecipientKey *ecdsa.PrivateKey,
 	minDurationUntilExpiration uint64,
 	storage storage.Storage,
 ) (Service, error) {
-	ethClient, err := ethclient.Dial(cChainRPCURL.String())
+	ethClient, err := ethclient.Dial(cChainRPCURL)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -79,7 +78,7 @@ func NewService(
 }
 
 type service struct {
-	logger                     logger.Logger
+	logger                     *zap.SugaredLogger
 	ethClient                  *ethclient.Client
 	storage                    storage.Storage
 	networkFeeRecipientKey     *ecdsa.PrivateKey

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
+	"go.uber.org/zap"
 	"maunium.net/go/mautrix/event"
 
 	"github.com/gin-gonic/gin"
@@ -15,7 +15,7 @@ import (
 
 // TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
 
-func newServer(_ context.Context, logger logger.Logger, hsAccessToken, port string, service service.Service) *server {
+func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken, port string, service service.Service) *server {
 	ginRouter := gin.New()
 	s := &server{
 		logger: logger,
@@ -40,7 +40,7 @@ func newServer(_ context.Context, logger logger.Logger, hsAccessToken, port stri
 }
 
 type server struct {
-	logger     logger.Logger
+	logger     *zap.SugaredLogger
 	httpServer *http.Server
 	gin        *gin.Engine
 	port       string
@@ -101,7 +101,7 @@ func middlewareBearerAuth(token string) gin.HandlerFunc {
 	}
 }
 
-func middlewareRecover(logger logger.Logger) gin.HandlerFunc {
+func middlewareRecover(logger *zap.SugaredLogger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -112,7 +112,7 @@ func middlewareRecover(logger logger.Logger) gin.HandlerFunc {
 	}
 }
 
-func middlewareLogger(logger logger.Logger) gin.HandlerFunc {
+func middlewareLogger(logger *zap.SugaredLogger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		logger.Debug(c.Request.Method, c.Request.URL.Path)
 		c.Next()

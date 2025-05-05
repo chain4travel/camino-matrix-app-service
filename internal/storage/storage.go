@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
 	_ "github.com/golang-migrate/migrate/v4/source/file" // required by migrate
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" // sql driver, required
+	"go.uber.org/zap"
 )
 
 var (
@@ -30,12 +30,11 @@ type Session interface {
 	Commit() error
 	Abort()
 
-	JobsStorage
 	ChequesStorage
 	ChunkedMessagesStorage
 }
 
-func New(ctx context.Context, logger logger.Logger, dbPath, dbName, migrationsPath string) (Storage, error) {
+func New(ctx context.Context, logger *zap.SugaredLogger, dbPath, dbName, migrationsPath string) (Storage, error) {
 	db, err := sqlx.Open("sqlite3", dbPath)
 	if err != nil {
 		logger.Error(err)
@@ -59,12 +58,11 @@ func New(ctx context.Context, logger logger.Logger, dbPath, dbName, migrationsPa
 }
 
 type storage struct {
-	logger logger.Logger
+	logger *zap.SugaredLogger
 	db     *sqlx.DB
 
 	chequeRecordsStatements
 	chunkedMessagesStatements
-	jobsStatements
 }
 
 func (s *storage) migrate(_ context.Context, dbName, migrationsPath string) error {
@@ -119,7 +117,6 @@ func (s *storage) prepare(ctx context.Context) error {
 	return errors.Join(
 		s.prepareChequeRecordsStmts(ctx),
 		s.prepareChunkedMessagesStmts(ctx),
-		s.prepareJobsStmts(ctx),
 	)
 }
 
@@ -144,7 +141,7 @@ func (s *storage) NewSession(ctx context.Context) (Session, error) {
 
 type session struct {
 	storage   *storage
-	logger    logger.Logger
+	logger    *zap.SugaredLogger
 	tx        *sqlx.Tx
 	committed bool
 }

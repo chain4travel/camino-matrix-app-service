@@ -3,15 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"os/signal"
 	"syscall"
 
+	"github.com/chain4travel/camino-matrix-app-service/config"
 	"github.com/chain4travel/camino-matrix-app-service/internal/app"
-	"github.com/chain4travel/camino-matrix-app-service/internal/config"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -26,38 +26,52 @@ var rootCmd = &cobra.Command{
 	RunE:       rootFunc,
 }
 
-func rootFunc(_ *cobra.Command, _ []string) error {
-	zapLogger, err := zap.NewDevelopment()
+func rootFunc(cmd *cobra.Command, _ []string) error {
+	configReaderLogger, err := zap.NewProduction()
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to create config-reader logger: %w", err)
 	}
-	logger := zapLogger.Sugar()
-	defer func() { _ = logger.Sync() }()
+
+	sugaredConfigReaderLogger := configReaderLogger.Sugar()
+	defer func() { _ = sugaredConfigReaderLogger.Sync() }()
+
+	configReader, err := config.NewConfigReader(cmd.Flags(), sugaredConfigReaderLogger)
+	if err != nil {
+		return fmt.Errorf("failed to create config reader: %w", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := config.ReadConfig(ctx, logger)
+	cfg, err := configReader.ReadConfig()
 	if err != nil {
-		logger.Error(err)
-		return err
+		return fmt.Errorf("failed to read config: %w", err)
 	}
 
-	if cfg.LogLevel == "info" {
-		zapLogger, err = zap.NewProduction()
-		if err != nil {
-			logger.Error(err)
-			return err
-		}
-		_ = logger.Sync()
-		logger = zapLogger.Sugar()
-		defer func() { _ = logger.Sync() }()
+	_ = sugaredConfigReaderLogger.Sync()
+
+	var zapLoggerConfig zap.Config
+	if cfg.LogLevel == "debug" {
+		zapLoggerConfig = zap.NewDevelopmentConfig()
+		zapLoggerConfig.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	} else {
+		zapLoggerConfig = zap.NewProductionConfig()
 	}
+	zapLoggerConfig.OutputPaths = []string{"stdout"}
+	zapLoggerConfig.ErrorOutputPaths = []string{"stderr"}
+	zapLogger, err := zapLoggerConfig.Build()
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+
+	logger := zapLogger.Sugar()
+	defer func() { _ = logger.Sync() }()
+
+	logger.Infof("Version: %s", Version) // TODO@ git, contracts, proto?
 
 	app, err := app.NewApp(ctx, logger, cfg)
 	if err != nil {
 		logger.Error(err)
-		app.Close(context.Background())
 		return err
 	}
 
@@ -66,10 +80,7 @@ func rootFunc(_ *cobra.Command, _ []string) error {
 
 func init() {
 	cobra.EnablePrefixMatching = true
-
-	if err := config.BindFlags(rootCmd); err != nil {
-		panic(fmt.Errorf("failed to bind flags: %w", err))
-	}
+	rootCmd.Flags().AddFlagSet(config.Flags())
 }
 
 func Execute() error {
