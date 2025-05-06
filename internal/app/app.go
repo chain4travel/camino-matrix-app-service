@@ -2,115 +2,205 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
-	"github.com/chain4travel/camino-matrix-app-service/internal/storage"
+	service_storage "github.com/chain4travel/camino-matrix-app-service/internal/storage/sqlite"
+	"github.com/chain4travel/camino-messenger-bot/pkg/chequehandler"
+	cheque_handler_storage "github.com/chain4travel/camino-messenger-bot/pkg/chequehandler/storage/sqlite"
+	cmaccounts "github.com/chain4travel/camino-messenger-bot/pkg/cm_accounts"
 	"github.com/chain4travel/camino-messenger-bot/pkg/database/sqlite"
 	"github.com/chain4travel/camino-messenger-bot/pkg/scheduler"
 	scheduler_storage "github.com/chain4travel/camino-messenger-bot/pkg/scheduler/storage/sqlite"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/jonboulle/clockwork"
 	"go.uber.org/zap"
 
 	"golang.org/x/sync/errgroup"
 )
 
-const cashInJobName = "cash_in"
+const (
+	cashInJobName       = "cash_in"
+	cmAccountsCacheSize = 1000
+)
 
 func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) (*App, error) {
-	app := &App{
-		logger: logger,
-		cfg:    cfg,
+	ethClient, err := ethclient.Dial(cfg.CChainRPCURL)
+	if err != nil {
+		logger.Error(err)
+		return nil, err
 	}
 
-	logger.Debug("Creating service...")
-	service, err := service.NewService(
+	chainID, err := ethClient.ChainID(ctx)
+	if err != nil {
+		logger.Error(err)
+		return nil, err
+	}
+
+	cmAccounts, err := cmaccounts.NewService(logger, cmAccountsCacheSize, ethClient)
+	if err != nil {
+		logger.Errorf("Failed to create cm accounts service: %v", err)
+		return nil, err
+	}
+
+	chequeHandlerStorage, err := cheque_handler_storage.New(
 		ctx,
 		logger,
-		cfg.CChainRPCURL,
-		cfg.CMAccountAddress,
-		cfg.NetworkFeeRecipientKey,
-		cfg.MinDurationUntilExpiration,
-		nil, // TODO@
+		sqlite.DBConfig(cfg.DB.ChequeHandler),
 	)
 	if err != nil {
-		return app, err
+		logger.Errorf("Failed to create cheque handler storage: %v", err)
+		return nil, err
 	}
-	app.service = service
 
-	logger.Debug("Creating HTTP server...")
-	app.httpServer = newServer(ctx, logger, cfg.MatrixAccessToken, cfg.HTTPPort, service)
+	chequeHandler, err := chequehandler.NewChequeHandler(
+		logger,
+		ethClient,
+		cfg.NetworkFeeRecipientKey,
+		cfg.CMAccountAddress,
+		chainID,
+		chequeHandlerStorage,
+		cmAccounts,
+		cfg.MinChequeDurationUntilExpiration, // MinDurationUntilExpiration // TODO@
+		cfg.ChequeExpirationTime,
+		cashInTxIssueTimeout,
+	)
+	if err != nil {
+		logger.Errorf("Failed to create cheque handler: %v", err)
+		return nil, err
+	}
 
-	storage, err := scheduler_storage.New(ctx, logger, sqlite.DBConfig(cfg.DB.Scheduler))
+	schedulerStorage, err := scheduler_storage.New(ctx, logger, sqlite.DBConfig(cfg.DB.Scheduler))
 	if err != nil {
 		logger.Errorf("Failed to create storage: %v", err)
 		return nil, err
 	}
 
-	logger.Debug("Creating scheduler...")
-	app.scheduler = scheduler.New(logger, storage, clockwork.NewRealClock())
-	app.scheduler.RegisterJobHandler(cashInJobName, func() {
-		_ = service.CashIn(context.Background())
+	scheduler := scheduler.New(logger, schedulerStorage, clockwork.NewRealClock())
+	scheduler.RegisterJobHandler(cashInJobName, func() {
+		_ = chequeHandler.CashIn(context.Background())
 	})
-	if err := app.scheduler.Schedule(ctx, cfg.CashInPeriod, cashInJobName); err != nil {
-		logger.Errorf("failed to schedule job %s: %v", cashInJobName, err)
+
+	serviceStorage, err := service_storage.New(
+		ctx,
+		logger,
+		sqlite.DBConfig(cfg.DB.ChequeHandler),
+	)
+	if err != nil {
+		logger.Errorf("Failed to create service storage: %v", err)
 		return nil, err
 	}
 
-	return app, nil
+	service, err := service.NewService(
+		ctx,
+		logger,
+		cfg.CMAccountAddress,
+		cfg.NetworkFeeRecipientKey,
+		cfg.MinDurationUntilExpiration,
+		serviceStorage,
+		ethClient,
+		chainID,
+		cmAccounts,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &App{
+		cfg:           cfg,
+		logger:        logger,
+		scheduler:     scheduler,
+		service:       service,
+		chequeHandler: chequeHandler,
+		storage:       serviceStorage,
+		httpServer:    newServer(ctx, logger, cfg.MatrixAccessToken, cfg.HTTPPort, service),
+	}, nil
 }
 
 type App struct {
-	logger     *zap.SugaredLogger
-	cfg        *config.Config
-	service    service.Service
-	scheduler  scheduler.Scheduler
-	httpServer *server
-	storage    storage.Storage
+	logger        *zap.SugaredLogger
+	cfg           *config.Config
+	service       service.Service
+	scheduler     scheduler.Scheduler
+	chequeHandler chequehandler.ChequeHandler
+	httpServer    *server
+	storage       service_storage.Storage
 }
 
-func (app *App) Run(ctx context.Context) error {
-	g, gCtx := errgroup.WithContext(ctx) // error here will call ctx.cancel() and finish other Go-s
+func (a *App) Run(ctx context.Context) error {
+	g, gCtx := errgroup.WithContext(ctx) // error here will call gCtx.cancel() and finish other Go-s
 
 	// run
 
+	cashInStatusCheckDone := make(chan struct{})
+	schedulerStarted := make(chan struct{})
+
 	g.Go(func() error {
-		return app.httpServer.Start(gCtx)
+		a.logger.Info("Starting start-up cash-in status check...")
+		if err := a.chequeHandler.CheckCashInStatus(gCtx); err != nil {
+			return fmt.Errorf("failed to check start-up cash-in status: %w", err)
+		}
+		a.logger.Info("Start-up cash-in status check done.")
+		close(cashInStatusCheckDone)
+		return nil
 	})
 
 	g.Go(func() error {
-		return app.service.CheckCashInStatus(gCtx)
+		if !awaitChan(gCtx, cashInStatusCheckDone) {
+			return nil
+		}
+
+		a.logger.Info("Starting scheduler...")
+
+		if err := a.scheduler.Schedule(gCtx, a.cfg.CashInPeriod, cashInJobName); err != nil {
+			return fmt.Errorf("failed to schedule cash in job: %w", err)
+		}
+		if err := a.scheduler.Start(gCtx); err != nil {
+			return fmt.Errorf("failed to start scheduler: %w", err)
+		}
+
+		a.logger.Info("Scheduler started.")
+		close(schedulerStarted)
+		return nil
 	})
 
 	g.Go(func() error {
-		return app.scheduler.Start(gCtx)
+		if !awaitChans(gCtx,
+			cashInStatusCheckDone,
+			schedulerStarted,
+		) {
+			return nil
+		}
+
+		a.logger.Info("Starting http server...")
+		return a.httpServer.Start(gCtx)
 	})
 
 	// stop
-	// <-gCtx.Done() means that all "run" goroutines are finished
 
 	g.Go(func() error {
 		<-gCtx.Done()
-		app.logger.Debug("Stopping HTTP server...")
-		return app.httpServer.Stop(context.Background())
+		a.logger.Debug("Stopping HTTP server...")
+		return a.httpServer.Stop(context.Background())
 	})
 
 	g.Go(func() error {
 		<-gCtx.Done()
-		app.logger.Debug("Closing storage...")
-		return app.storage.Close(context.Background())
+		a.logger.Debug("Closing storage...")
+		return a.storage.Close()
 	})
 
 	g.Go(func() error {
 		<-gCtx.Done()
-		app.logger.Debug("Stopping scheduler...")
-		return app.scheduler.Stop()
+		a.logger.Debug("Stopping scheduler...")
+		return a.scheduler.Stop()
 	})
 
 	// wait
 	err := g.Wait()
 	if err != nil {
-		app.logger.Error(err) // will log first run/stop error
+		a.logger.Error(err) // will log first run/stop error
 	}
 
 	return err
@@ -129,11 +219,29 @@ func (app *App) Close(ctx context.Context) {
 	if app.storage != nil {
 		g.Go(func() error {
 			app.logger.Debug("Closing storage...")
-			return app.storage.Close(ctx)
+			return app.storage.Close()
 		})
 	}
 
 	if err := g.Wait(); err != nil {
 		app.logger.Error(err)
 	}
+}
+
+func awaitChan(ctx context.Context, ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func awaitChans(ctx context.Context, chans ...<-chan struct{}) bool {
+	for _, ch := range chans {
+		if !awaitChan(ctx, ch) {
+			return false
+		}
+	}
+	return true
 }
