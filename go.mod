@@ -5,7 +5,7 @@ go 1.23.5
 toolchain go1.23.8
 
 require (
-	github.com/chain4travel/camino-messenger-bot v0.6.1-0.20250424094556-8c626502716a
+	github.com/chain4travel/camino-messenger-bot v0.6.1-0.20250506142545-9b2047c7b7e9
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-viper/mapstructure/v2 v2.2.1
