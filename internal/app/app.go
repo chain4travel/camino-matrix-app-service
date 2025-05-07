@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
@@ -21,8 +22,9 @@ import (
 )
 
 const (
-	cashInJobName       = "cash_in"
-	cmAccountsCacheSize = 1000
+	cashInJobName        = "cash_in"
+	cmAccountsCacheSize  = 1000
+	cashInTxIssueTimeout = 10 * time.Second
 )
 
 func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) (*App, error) {
@@ -57,13 +59,13 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	chequeHandler, err := chequehandler.NewChequeHandler(
 		logger,
 		ethClient,
-		cfg.NetworkFeeRecipientKey,
-		cfg.CMAccountAddress,
+		cfg.NetworkFeeRecipientBotKey,
+		cfg.NetworkFeeRecipientCMAccountAddress,
 		chainID,
 		chequeHandlerStorage,
 		cmAccounts,
-		cfg.MinChequeDurationUntilExpiration, // MinDurationUntilExpiration // TODO@
-		cfg.ChequeExpirationTime,
+		cfg.MinChequeDurationUntilExpiration,
+		nil, // ChequeExpirationTime is not used, because no cheques will be issued
 		cashInTxIssueTimeout,
 	)
 	if err != nil {
@@ -95,9 +97,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	service, err := service.NewService(
 		ctx,
 		logger,
-		cfg.CMAccountAddress,
-		cfg.NetworkFeeRecipientKey,
-		cfg.MinDurationUntilExpiration,
+		cfg.NetworkFeeRecipientCMAccountAddress,
 		serviceStorage,
 		ethClient,
 		chainID,

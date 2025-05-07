@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 	"time"
@@ -85,14 +86,15 @@ func (cr *reader) ReadConfig() (*Config, error) {
 }
 
 func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
-	networkFeeRecipientECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientKey)
+	NetworkFeeRecipientBotECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientBOtKey)
 	if err != nil {
+		err = fmt.Errorf("invalid network fee recipient bot key: %w", err)
 		cr.logger.Error(err)
 		return nil, err
 	}
 
-	if !common.IsHexAddress(cfg.CMAccountAddress) {
-		err := errors.New("invalid CM account address")
+	if !common.IsHexAddress(cfg.NetworkFeeRecipientCMAccountAddress) {
+		err := errors.New("invalid network fee recipient CM account address")
 		cr.logger.Error(err)
 		return nil, err
 	}
@@ -114,8 +116,8 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 				MigrationsPath: cfg.DB.MigrationsPath + "/cheque_handler",
 			},
 		},
-		CMAccountAddress:           common.HexToAddress(cfg.CMAccountAddress),
-		NetworkFeeRecipientKey:     networkFeeRecipientECDSAKey,
-		MinDurationUntilExpiration: cfg.MinDurationUntilExpiration,
+		NetworkFeeRecipientCMAccountAddress: common.HexToAddress(cfg.NetworkFeeRecipientCMAccountAddress),
+		NetworkFeeRecipientBotKey:           NetworkFeeRecipientBotECDSAKey,
+		MinChequeDurationUntilExpiration:    big.NewInt(0).SetUint64(cfg.MinChequeDurationUntilExpiration),
 	}, nil
 }

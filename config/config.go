@@ -6,6 +6,7 @@ package config
 import (
 	"crypto/ecdsa"
 	"encoding/hex"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,15 +18,15 @@ import (
 //
 
 type Config struct {
-	LogLevel                   string            `mapstructure:"log_level"`
-	CChainRPCURL               string            `mapstructure:"c_chain_rpc_url"`
-	HTTPPort                   string            `mapstructure:"http_port"`
-	MatrixAccessToken          string            `mapstructure:"matrix_access_token"`
-	DB                         SQLiteDBConfig    `mapstructure:"db"`
-	CMAccountAddress           common.Address    `mapstructure:"cm_account_address"`
-	NetworkFeeRecipientKey     *ecdsa.PrivateKey `mapstructure:"network_fee_recipient_key"`
-	MinDurationUntilExpiration uint64            `mapstructure:"min_duration_until_expiration"` // seconds
-	CashInPeriod               time.Duration     `mapstructure:"cash_in_period"`
+	LogLevel                            string            `mapstructure:"log_level"`
+	CChainRPCURL                        string            `mapstructure:"c_chain_rpc_url"`
+	HTTPPort                            string            `mapstructure:"http_port"`
+	MatrixAccessToken                   string            `mapstructure:"matrix_access_token"`
+	DB                                  SQLiteDBConfig    `mapstructure:"db"`
+	NetworkFeeRecipientCMAccountAddress common.Address    `mapstructure:"network_fee_recipient_cm_account_address"`
+	NetworkFeeRecipientBotKey           *ecdsa.PrivateKey `mapstructure:"network_fee_recipient_bot_key"`
+	MinChequeDurationUntilExpiration    *big.Int          `mapstructure:"min_cheque_duration_until_expiration"` // seconds
+	CashInPeriod                        time.Duration     `mapstructure:"cash_in_period"`
 }
 
 type SQLiteDBConfig struct {
@@ -39,15 +40,15 @@ type SQLiteDBConfig struct {
 //
 
 type UnparsedConfig struct {
-	LogLevel                   string                 `mapstructure:"log_level"`
-	CChainRPCURL               string                 `mapstructure:"c_chain_rpc_url"`
-	HTTPPort                   string                 `mapstructure:"http_port"`
-	MatrixAccessToken          string                 `mapstructure:"matrix_access_token"`
-	DB                         UnparsedSQLiteDBConfig `mapstructure:"db"`
-	CMAccountAddress           string                 `mapstructure:"cm_account_address"`
-	NetworkFeeRecipientKey     string                 `mapstructure:"network_fee_recipient_key"`
-	MinDurationUntilExpiration uint64                 `mapstructure:"min_duration_until_expiration"` // seconds
-	CashInPeriod               uint64                 `mapstructure:"cash_in_period"`                // seconds
+	LogLevel                            string                 `mapstructure:"log_level"`
+	CChainRPCURL                        string                 `mapstructure:"c_chain_rpc_url"`
+	HTTPPort                            string                 `mapstructure:"http_port"`
+	MatrixAccessToken                   string                 `mapstructure:"matrix_access_token"`
+	DB                                  UnparsedSQLiteDBConfig `mapstructure:"db"`
+	NetworkFeeRecipientCMAccountAddress string                 `mapstructure:"network_fee_recipient_cm_account_address"`
+	NetworkFeeRecipientBOtKey           string                 `mapstructure:"network_fee_recipient_bot_key"`
+	MinChequeDurationUntilExpiration    uint64                 `mapstructure:"min_cheque_duration_until_expiration"` // seconds
+	CashInPeriod                        uint64                 `mapstructure:"cash_in_period"`                       // seconds
 }
 
 type UnparsedSQLiteDBConfig struct {
@@ -57,14 +58,14 @@ type UnparsedSQLiteDBConfig struct {
 
 func (cfg *Config) unparse() *UnparsedConfig {
 	return &UnparsedConfig{
-		LogLevel:                   cfg.LogLevel,
-		CChainRPCURL:               cfg.CChainRPCURL,
-		DB:                         cfg.DB.Common,
-		HTTPPort:                   cfg.HTTPPort,
-		MatrixAccessToken:          cfg.MatrixAccessToken,
-		CMAccountAddress:           cfg.CMAccountAddress.Hex(),
-		NetworkFeeRecipientKey:     hex.EncodeToString(crypto.FromECDSA(cfg.NetworkFeeRecipientKey)),
-		MinDurationUntilExpiration: cfg.MinDurationUntilExpiration,
-		CashInPeriod:               uint64(cfg.CashInPeriod / time.Second),
+		LogLevel:                            cfg.LogLevel,
+		CChainRPCURL:                        cfg.CChainRPCURL,
+		DB:                                  cfg.DB.Common,
+		HTTPPort:                            cfg.HTTPPort,
+		MatrixAccessToken:                   cfg.MatrixAccessToken,
+		NetworkFeeRecipientCMAccountAddress: cfg.NetworkFeeRecipientCMAccountAddress.Hex(),
+		NetworkFeeRecipientBOtKey:           hex.EncodeToString(crypto.FromECDSA(cfg.NetworkFeeRecipientBotKey)),
+		MinChequeDurationUntilExpiration:    cfg.MinChequeDurationUntilExpiration.Uint64(),
+		CashInPeriod:                        uint64(cfg.CashInPeriod / time.Second),
 	}
 }

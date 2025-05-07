@@ -2,31 +2,23 @@ package service
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"errors"
 	"math/big"
-	"time"
 
 	"github.com/chain4travel/camino-messenger-bot/pkg/chequehandler"
 	cmaccounts "github.com/chain4travel/camino-messenger-bot/pkg/cm_accounts"
 	"github.com/chain4travel/camino-messenger-bot/pkg/matrix"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
-const (
-	networkFee           uint64 = 100000 // nCAM
-	cashInTxIssueTimeout        = 10 * time.Second
-	cmAccountsCacheSize         = 100
-)
-
 var (
 	_ Service = (*service)(nil)
+
+	networkFeeBig = new(big.Int).SetUint64(100000) // nCAM
 
 	ErrNotFound = errors.New("not found")
 )
@@ -38,36 +30,30 @@ type Service interface {
 func NewService(
 	ctx context.Context,
 	logger *zap.SugaredLogger,
-	contractAddr common.Address,
-	networkFeeRecipientKey *ecdsa.PrivateKey,
-	minDurationUntilExpiration uint64,
+	networkFeeRecipientCMAccountAddress common.Address,
 	storage Storage,
 	ethClient *ethclient.Client,
 	chainID *big.Int,
 	cmAccounts cmaccounts.Service,
 ) (Service, error) {
 	return &service{
-		logger:                     logger,
-		ethClient:                  ethClient,
-		networkFeeRecipientKey:     networkFeeRecipientKey,
-		networkFeeRecipientAddress: contractAddr,
-		storage:                    storage,
-		chainID:                    chainID,
-		minDurationUntilExpiration: big.NewInt(0).SetUint64(minDurationUntilExpiration),
-		cmAccounts:                 cmAccounts,
+		logger:                              logger,
+		ethClient:                           ethClient,
+		networkFeeRecipientCMAccountAddress: networkFeeRecipientCMAccountAddress,
+		storage:                             storage,
+		chainID:                             chainID,
+		cmAccounts:                          cmAccounts,
 	}, nil
 }
 
 type service struct {
-	logger                     *zap.SugaredLogger
-	ethClient                  *ethclient.Client
-	storage                    Storage
-	networkFeeRecipientKey     *ecdsa.PrivateKey
-	networkFeeRecipientAddress common.Address
-	chainID                    *big.Int
-	minDurationUntilExpiration *big.Int
-	cmAccounts                 cmaccounts.Service
-	chequeHandler              chequehandler.ChequeHandler
+	logger                              *zap.SugaredLogger
+	ethClient                           *ethclient.Client
+	storage                             Storage
+	networkFeeRecipientCMAccountAddress common.Address
+	chainID                             *big.Int
+	cmAccounts                          cmaccounts.Service
+	chequeHandler                       chequehandler.ChequeHandler
 }
 
 func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error {
@@ -85,7 +71,7 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 				continue
 			}
 
-			banSender, err := s.processMessage(ctx, msg, evnt.ID)
+			banSender, err := s.processMessage(ctx, msg, evnt.Sender, evnt.ID)
 			if err != nil {
 				return err
 			}
@@ -102,7 +88,7 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 
 // processMessage extracts network fee cheque, verifies it and stores it in the database.
 // Returns true if cheque is not valid or not covering all message chunks, indicating that sender should be banned
-func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, eventID id.EventID) (bool, error) {
+func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
 	s.logger.Debugf("Processing message %s...", eventID)
 	defer s.logger.Debugf("Finished message %s", eventID)
 
@@ -120,9 +106,9 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 
 	switch {
 	case msg.Metadata.ChunkIndex == 0:
-		cheque := msg.GetChequeFor(s.networkFeeRecipientAddress)
+		cheque := msg.GetChequeFor(s.networkFeeRecipientCMAccountAddress)
 		if cheque == nil {
-			s.logger.Infof("event (%s) does not contain cheque for ASB owner %s", eventID, s.networkFeeRecipientAddress)
+			s.logger.Infof("event (%s) does not contain cheque for ASB owner %s", eventID, s.networkFeeRecipientCMAccountAddress)
 			return true, nil
 		}
 
@@ -132,7 +118,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		}
 
 		// TODO@ sender must be bot
-		if err := s.chequeHandler.VerifyCheque(ctx, cheque, common.HexToAddress(msg.Metadata.Sender), nil); err != nil {
+		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), networkFeeBig); err != nil {
 			s.logger.Infof("Failed to verify cheque: %v", err)
 			return true, nil
 		}
@@ -182,22 +168,4 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 // TODO @evlekht implement (next ticket) // persist with db, make it durable? not just call it from event receiver?
 func (s *service) banUser(_ context.Context, _ id.UserID) error {
 	return nil
-}
-
-func waitMined(ctx context.Context, b bind.DeployBackend, txID common.Hash) (*types.Receipt, error) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		receipt, err := b.TransactionReceipt(ctx, txID)
-		if err == nil {
-			return receipt, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }
