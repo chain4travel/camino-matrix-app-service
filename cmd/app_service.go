@@ -8,6 +8,7 @@ import (
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
 	"github.com/chain4travel/camino-matrix-app-service/internal/app"
+	"github.com/chain4travel/camino-matrix-app-service/internal/version"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -67,7 +68,10 @@ func rootFunc(cmd *cobra.Command, _ []string) error {
 	logger := zapLogger.Sugar()
 	defer func() { _ = logger.Sync() }()
 
-	logger.Infof("Version: %s", Version) // TODO@ git, contracts, proto?
+	logger.Infof("App version: %s (git: %s)", version.AppVersion, version.AppGitCommit)
+	logger.Infof("buf.build protocolbuffers version: %s (CMP %s)", version.BufBuildPBCommit, version.BufBuildPBCMPRelease)
+	logger.Infof("buf.build grpc version: %s (CMP %s)", version.BufBuildGRPCCommit, version.BufBuildGRPCCMPRelease)
+	logger.Infof("camino-messenger-contracts version: %s", version.ContractsGitCommit)
 
 	app, err := app.NewApp(ctx, logger, cfg)
 	if err != nil {

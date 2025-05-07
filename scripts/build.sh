@@ -1,11 +1,100 @@
 #!/bin/bash
 
+# Set the output binary name
+OUTPUT_BINARY="build/camino-matrix-app-service"
 
+# Set the main source file
+MAIN_SOURCE="main.go"
 
-if ! go build -o build/camino-matrix-app-service main.go
-then
-    echo "Build failed."
+# Flag to enable debug mode
+DEBUG=false
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+	key="$1"
+	case $key in
+	-d | --debug)
+		DEBUG=true
+		shift
+		;;
+	*)
+		echo "Unknown option: $1"
+		exit 1
+		;;
+	esac
+done
+
+# Changes to the minimum golang version must also be replicated in
+# scripts/build.sh (here)
+# Dockerfile
+# README.md
+# go.mod
+go_version_minimum="1.23"
+
+go_version() {
+    go version | sed -nE -e 's/[^0-9.]+([0-9.]+).+/\1/p'
+}
+
+version_lt() {
+    # Return true if $1 is a lower version than than $2,
+    local ver1=$1
+    local ver2=$2
+    # Reverse sort the versions, if the 1st item != ver1 then ver1 < ver2
+    if  [[ $(echo -e -n "$ver1\n$ver2\n" | sort -rV | head -n1) != "$ver1" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+if version_lt "$(go_version)" "$go_version_minimum"; then
+    echo "camino-matrix-app-service requires Go >= $go_version_minimum, Go $(go_version) found." >&2
     exit 1
+fi
+
+echo "Starting build process..."
+
+if [ -z "${CAMINO_APP_SERVICE_PATH}" ]; then
+	# camino-matrix-app-service root folder
+	CAMINO_APP_SERVICE_PATH=$(
+		cd "$(dirname "${BASH_SOURCE[0]}")" || exit
+		cd .. && pwd
+	)
+fi
+echo "cd $CAMINO_APP_SERVICE_PATH"
+cd "$CAMINO_APP_SERVICE_PATH" || exit
+
+# Load the constants
+echo "Preparing constants..."
+source "$CAMINO_APP_SERVICE_PATH"/scripts/constants.sh
+
+echo "  DEBUG                  : $DEBUG"
+echo "  git_tag                : $git_tag"
+echo "  git_commit             : $git_commit"
+echo "  protocolbuffers_release: $protocolbuffers_release"
+echo "  grpc_release           : $grpc_release"
+
+LDFLAGS="-X github.com/chain4travel/camino-matrix-app-service/internal/version.AppGitCommit=$git_commit"
+LDFLAGS="$LDFLAGS -X github.com/chain4travel/camino-matrix-app-service/internal/version.AppVersion=$git_tag"
+LDFLAGS="$LDFLAGS -X github.com/chain4travel/camino-matrix-app-service/internal/version.BufBuildPBCMPRelease=$protocolbuffers_release"
+LDFLAGS="$LDFLAGS -X github.com/chain4travel/camino-matrix-app-service/internal/version.BufBuildGRPCCMPRelease=$grpc_release"
+
+# Build the Go application
+echo "Building camino-matrix-app-service..."
+if [ "$DEBUG" = true ]; then
+	BUILD_CMD="go build -o ${OUTPUT_BINARY} -ldflags \"$LDFLAGS\" -gcflags \"all=-N -l\" ${MAIN_SOURCE}"
 else
-    echo "Build successful!"
+	BUILD_CMD="go build -o ${OUTPUT_BINARY} -ldflags \"$LDFLAGS\" ${MAIN_SOURCE}"
+fi
+
+echo "$BUILD_CMD"
+
+
+if eval "$BUILD_CMD"
+then
+	echo "Output binary: ${CAMINO_APP_SERVICE_PATH}/${OUTPUT_BINARY}"
+	echo "Build successful!"
+else
+	echo "Build failed."
+	exit 1
 fi
