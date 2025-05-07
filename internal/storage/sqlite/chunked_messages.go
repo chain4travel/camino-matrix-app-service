@@ -10,18 +10,12 @@ import (
 	"fmt"
 
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
 )
 
 const chunkedMessagesTableName = "chunked_messages"
-const chequeRecordsTableName = "cheque_records"
 
-var (
-	_ service.Storage = (*storage)(nil)
-
-	zeroHash = common.Hash{}
-)
+var _ service.MessageChunksStorage = (*storage)(nil)
 
 type chunkedMessage struct {
 	MessageID            string `db:"message_id"`
@@ -169,112 +163,3 @@ func (s *storage) prepareChunkedMessagesStmts(ctx context.Context) error {
 
 	return nil
 }
-
-type chequeRecordsStatements struct {
-	getNotCashedChequeRecords, getChequeRecordsWithPendingTxs *sqlx.Stmt
-	getChequeRecordByID, getChequeRecordByTxID                *sqlx.Stmt
-	upsertChequeRecord                                        *sqlx.NamedStmt
-}
-
-// func (s *storage) prepareChequeRecordsStmts(ctx context.Context) error {
-
-// 	upsertChequeRecord, err := s.base.DB.PrepareNamedContext(ctx, fmt.Sprintf(`
-// 		INSERT INTO %s (
-// 			cheque_record_id,
-// 			from_cm_account,
-// 			to_cm_account,
-// 			to_bot,
-// 			counter,
-// 			amount,
-// 			created_at,
-// 			expires_at,
-// 			signature,
-// 			tx_id,
-// 			status
-// 		) VALUES (
-// 			:cheque_record_id,
-// 			:from_cm_account,
-// 			:to_cm_account,
-// 			:to_bot,
-// 			:counter,
-// 			:amount,
-// 			:created_at,
-// 			:expires_at,
-// 			:signature,
-// 			:tx_id,
-// 			:status
-// 		)
-// 		ON CONFLICT(cheque_record_id)
-// 		DO UPDATE SET
-// 			counter     = excluded.counter,
-// 			amount      = excluded.amount,
-// 			created_at  = excluded.created_at,
-// 			expires_at  = excluded.expires_at,
-// 			signature   = excluded.signature,
-// 			tx_id       = excluded.tx_id,
-// 			status      = excluded.status
-// 	`, chequeRecordsTableName))
-// 	if err != nil {
-// 		s.base.Logger.Error(err)
-// 		return err
-// 	}
-// 	s.upsertChequeRecord = upsertChequeRecord
-
-// 	return nil
-// }
-
-// func modelFromChequeRecord(chequeRecord *chequeRecord) *chequehandler.ChequeRecord {
-// 	txID := common.Hash{}
-// 	if chequeRecord.TxID != nil {
-// 		txID = *chequeRecord.TxID
-// 	}
-
-// 	status := chequehandler.ChequeTxStatusUnknown
-// 	if chequeRecord.Status != nil {
-// 		status = *chequeRecord.Status
-// 	}
-
-// 	return &chequehandler.ChequeRecord{
-// 		SignedCheque: cheques.SignedCheque{
-// 			Cheque: cheques.Cheque{
-// 				FromCMAccount: chequeRecord.FromCMAccount,
-// 				ToCMAccount:   chequeRecord.ToCMAccount,
-// 				ToBot:         chequeRecord.ToBot,
-// 				Counter:       big.NewInt(0).SetBytes(chequeRecord.Counter),
-// 				Amount:        big.NewInt(0).SetBytes(chequeRecord.Amount),
-// 				CreatedAt:     big.NewInt(0).SetBytes(chequeRecord.CreatedAt),
-// 				ExpiresAt:     big.NewInt(0).SetBytes(chequeRecord.ExpiresAt),
-// 			},
-// 			Signature: chequeRecord.Signature,
-// 		},
-// 		ChequeRecordID: chequeRecord.ChequeRecordID,
-// 		TxID:           txID,
-// 		Status:         status,
-// 	}
-// }
-
-// func chequeRecordFromModel(model *chequehandler.ChequeRecord) *chequeRecord {
-// 	var txID *common.Hash
-// 	if model.TxID != zeroHash {
-// 		txID = &model.TxID
-// 	}
-
-// 	var status *chequehandler.ChequeTxStatus
-// 	if model.Status != chequehandler.ChequeTxStatusUnknown {
-// 		status = &model.Status
-// 	}
-
-// 	return &chequeRecord{
-// 		ChequeRecordID: model.ChequeRecordID,
-// 		FromCMAccount:  model.FromCMAccount,
-// 		ToCMAccount:    model.ToCMAccount,
-// 		ToBot:          model.ToBot,
-// 		Counter:        model.Counter.Bytes(),
-// 		Amount:         model.Amount.Bytes(),
-// 		CreatedAt:      model.CreatedAt.Bytes(),
-// 		ExpiresAt:      model.ExpiresAt.Bytes(),
-// 		Signature:      model.Signature,
-// 		TxID:           txID,
-// 		Status:         status,
-// 	}
-// }

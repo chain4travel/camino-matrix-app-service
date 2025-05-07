@@ -112,42 +112,27 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 			return true, nil
 		}
 
-		if _, _, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID); !errors.Is(err, ErrNotFound) { // TODO@ remove this check
-			s.logger.Infof("Dropping message first chunk: %v", err) // TODO@ already exist or error
-			return true, err
-		}
-
-		// TODO@ sender must be bot
 		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), networkFeeBig); err != nil {
 			s.logger.Infof("Failed to verify cheque: %v", err)
 			return true, nil
 		}
 
-		if err := s.storage.InsertChunkedMessage(ctx, session, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks); err != nil { // TODO@ insert, not upsert; error on conflict
+		if err := s.storage.InsertChunkedMessage(ctx, session, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks); err != nil {
 			s.logger.Errorf("Failed to store message chunk: %v", err)
 			return false, err
 		}
 
-		return false, session.Commit()
-
 	case msg.Metadata.ChunkIndex == msg.Metadata.NumberOfChunks-1:
-		if err := s.storage.DeleteChunkedMessage(ctx, session, msg.Metadata.RequestID); err != nil { // TODO@ delete, error on not found
+		if err := s.storage.DeleteChunkedMessage(ctx, session, msg.Metadata.RequestID); err != nil {
 			s.logger.Errorf("Failed to delete message chunk: %v", err)
 			return false, err
 		}
 
-		return false, session.Commit()
-
 	default: // Middle chunk, first chunk is already stored
-		storedChunksNumber, maxChunksNumber, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID)
+		_, maxChunksNumber, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID)
 		if err != nil {
 			s.logger.Errorf("Couldn't create storage session: %v", err)
 			return false, err
-		}
-
-		if storedChunksNumber == 0 { // TODO@ should never happen ?
-			s.logger.Infof("event (%s) is not the first chunk, but no first chunk stored", eventID)
-			return true, nil
 		}
 
 		if msg.Metadata.ChunkIndex > maxChunksNumber-1 {
@@ -155,13 +140,13 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 			return true, nil
 		}
 
-		if err := s.storage.AddMessageChunk(ctx, session, msg.Metadata.RequestID); err != nil { // TODO@ update, not upsert; error on not found
+		if err := s.storage.AddMessageChunk(ctx, session, msg.Metadata.RequestID); err != nil {
 			s.logger.Errorf("Failed to add message chunk: %v", err)
 			return false, err
 		}
-
-		return false, session.Commit()
 	}
+
+	return false, session.Commit()
 	// TODO @evlekht do cash in amount threshold reached? store unpaid amount in cheque?
 }
 
