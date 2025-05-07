@@ -11,12 +11,20 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  go_version: '~1.23.1'
+  go_version: "~1.23.5"
+
+permissions:
+  # Required: allow read access to the content for analysis.
+  contents: read
+  # Optional: allow read access to pull request. Use with `only-new-issues` option.
+  pull-requests: read
+  # Optional: allow write access to checks to allow the action to annotate code in the PR.
+  checks: write
 
 jobs:
   unit:
     name: Unit Tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -24,31 +32,58 @@ jobs:
           go-version: ${{ env.go_version }}
       - name: build_test
         shell: bash
-        run: ./scripts/build_test.sh
+        run: scripts/build_test.sh
+
+  # When the golangci-lint version is updated here, also update it in scripts/lint.sh
   lint:
     name: Static Analysis
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.go_version }}
-      - name: Run static analysis tests
+      - name: Execute linter script
         shell: bash
         run: scripts/lint.sh
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - name: Run shellcheck
         shell: bash
         run: scripts/shellcheck.sh
-  go_mod_tidy:
-    name: Check state of go.mod and go.sum
-    runs-on: ubuntu-22.04
+        
+  check_clean_branch:
+    name: Check that go mod tidy is performed
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.go_version }}
-      - shell: bash
+      - name: Go Mod Tidy
+        shell: bash
         run: go mod tidy
-      - shell: bash
+      - name: Check Clean Branch
+        shell: bash
         run: .github/workflows/check-clean-branch.sh
 
+  build_docker:
+    name: Build docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: |
+            c4tplatform/camino-matrix-app-service:temp
