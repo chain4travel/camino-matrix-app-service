@@ -206,28 +206,6 @@ func (a *App) Run(ctx context.Context) error {
 	return err
 }
 
-func (app *App) Close(ctx context.Context) {
-	g, _ := errgroup.WithContext(ctx)
-
-	if app.httpServer != nil {
-		g.Go(func() error {
-			app.logger.Debug("Stopping HTTP server...")
-			return app.httpServer.Stop(ctx)
-		})
-	}
-
-	if app.storage != nil {
-		g.Go(func() error {
-			app.logger.Debug("Closing storage...")
-			return app.storage.Close()
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		app.logger.Error(err)
-	}
-}
-
 func awaitChan(ctx context.Context, ch <-chan struct{}) bool {
 	select {
 	case <-ch:
