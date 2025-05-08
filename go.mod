@@ -1,8 +1,6 @@
 module github.com/chain4travel/camino-matrix-app-service
 
-go 1.23.5
-
-toolchain go1.23.8
+go 1.23.9
 
 require (
 	github.com/chain4travel/camino-messenger-bot v0.6.1-0.20250507142025-d66a9da1af01
