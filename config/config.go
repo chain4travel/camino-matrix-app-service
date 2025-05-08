@@ -13,15 +13,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// ******* Parsed config *******
 //
+// ******* Parsed config *******
 //
 
 type Config struct {
 	LogLevel                            string            `mapstructure:"log_level"`
-	CChainRPCURL                        string            `mapstructure:"c_chain_rpc_url"`
-	HTTPPort                            string            `mapstructure:"http_port"`
-	MatrixAccessToken                   string            `mapstructure:"matrix_access_token"`
+	Matrix                              MatrixConfig      `mapstructure:"matrix"`
+	ChainRPCURL                         string            `mapstructure:"chain_rpc_url"`
 	DB                                  SQLiteDBConfig    `mapstructure:"db"`
 	NetworkFeeRecipientCMAccountAddress common.Address    `mapstructure:"network_fee_recipient_cm_account_address"`
 	NetworkFeeRecipientBotKey           *ecdsa.PrivateKey `mapstructure:"network_fee_recipient_bot_key"`
@@ -35,20 +34,28 @@ type SQLiteDBConfig struct {
 	ChequeHandler UnparsedSQLiteDBConfig
 }
 
-// ******* Unparsed config *******
 //
+// ******* Common *******
+//
+
+type MatrixConfig struct {
+	HTTPPort    uint64 `mapstructure:"http_port"`
+	AccessToken string `mapstructure:"access_token"`
+}
+
+//
+// ******* Unparsed config *******
 //
 
 type UnparsedConfig struct {
 	LogLevel                            string                 `mapstructure:"log_level"`
-	CChainRPCURL                        string                 `mapstructure:"c_chain_rpc_url"`
-	HTTPPort                            string                 `mapstructure:"http_port"`
-	MatrixAccessToken                   string                 `mapstructure:"matrix_access_token"`
+	Matrix                              MatrixConfig           `mapstructure:"matrix"`
+	ChainRPCURL                         string                 `mapstructure:"chain_rpc_url"`
 	DB                                  UnparsedSQLiteDBConfig `mapstructure:"db"`
 	NetworkFeeRecipientCMAccountAddress string                 `mapstructure:"network_fee_recipient_cm_account_address"`
 	NetworkFeeRecipientBOtKey           string                 `mapstructure:"network_fee_recipient_bot_key"`
 	MinChequeDurationUntilExpiration    uint64                 `mapstructure:"min_cheque_duration_until_expiration"` // seconds
-	CashInPeriod                        uint64                 `mapstructure:"cash_in_period"`                       // seconds
+	CashInPeriod                        int64                  `mapstructure:"cash_in_period"`                       // seconds
 }
 
 type UnparsedSQLiteDBConfig struct {
@@ -59,13 +66,12 @@ type UnparsedSQLiteDBConfig struct {
 func (cfg *Config) unparse() *UnparsedConfig {
 	return &UnparsedConfig{
 		LogLevel:                            cfg.LogLevel,
-		CChainRPCURL:                        cfg.CChainRPCURL,
+		Matrix:                              cfg.Matrix,
+		ChainRPCURL:                         cfg.ChainRPCURL,
 		DB:                                  cfg.DB.Common,
-		HTTPPort:                            cfg.HTTPPort,
-		MatrixAccessToken:                   cfg.MatrixAccessToken,
 		NetworkFeeRecipientCMAccountAddress: cfg.NetworkFeeRecipientCMAccountAddress.Hex(),
 		NetworkFeeRecipientBOtKey:           hex.EncodeToString(crypto.FromECDSA(cfg.NetworkFeeRecipientBotKey)),
 		MinChequeDurationUntilExpiration:    cfg.MinChequeDurationUntilExpiration.Uint64(),
-		CashInPeriod:                        uint64(cfg.CashInPeriod / time.Second),
+		CashInPeriod:                        int64(cfg.CashInPeriod / time.Second),
 	}
 }

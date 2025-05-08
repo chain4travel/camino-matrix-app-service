@@ -14,16 +14,21 @@ func Flags() *pflag.FlagSet {
 
 	flags.String(flagKeyConfig, ".", "path to config file dir")
 
-	flags.String("cash_in_period", ".", "Cash-in period.")
-	flags.String("c_chain_rpc_url", ".", "Camino c-chain rpc url.")
-	flags.String("http_port", ".", "App-service http port.")
-	flags.String("matrix_access_token", ".", "Access token that matrix will use in requests to app-service.")
+	// Main config flags
 	flags.String("log_level", ".", "Log level.")
-	flags.String("db_path", ".", "Path to database.")
-	flags.String("db_name", ".", "Database name.")
-	flags.String("migrations_path", ".", "Path to database migrations folder.")
-	flags.String("cm_account_contract_address", ".", "CM account contract address.")
-	flags.String("network_fee_recipient_key", ".", "Network fee recipient key.")
+	flags.String("chain_rpc_url", ".", "Camino chain rpc url.")
+	flags.String("network_fee_recipient_cm_account_address", ".", "Network fee recipient CMAccount address.")
+	flags.String("network_fee_recipient_bot_key", ".", "Network fee recipient bot key.")
+	flags.Uint64("min_cheque_duration_until_expiration", 3600*24*30*6, "Minimum valid duration until cheque expiration (in seconds).")
+	flags.Int64("cash_in_period", 3600*24, "Cash-in period (in seconds).")
+
+	// DB config flags
+	flags.String("db.path", "camino-matrix-app-service-db", "Path to database dir.")
+	flags.String("db.migrations_path", "file://./migrations", "Path to migration scripts.")
+
+	// Matrix config flags
+	flags.Uint64("matrix.http_port", 9090, "App-service http port.")
+	flags.String("matrix.access_token", ".", "Access token that matrix will use in requests to app-service.")
 
 	return flags
 }

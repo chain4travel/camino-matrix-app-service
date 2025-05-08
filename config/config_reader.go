@@ -100,11 +100,9 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 	}
 
 	return &Config{
-		CashInPeriod:      time.Duration(cfg.CashInPeriod) * time.Second,
-		CChainRPCURL:      cfg.CChainRPCURL,
-		HTTPPort:          cfg.HTTPPort,
-		MatrixAccessToken: cfg.MatrixAccessToken,
-		LogLevel:          cfg.LogLevel,
+		LogLevel:    cfg.LogLevel,
+		Matrix:      cfg.Matrix,
+		ChainRPCURL: cfg.ChainRPCURL,
 		DB: SQLiteDBConfig{
 			Common: cfg.DB,
 			Scheduler: UnparsedSQLiteDBConfig{
@@ -119,5 +117,6 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 		NetworkFeeRecipientCMAccountAddress: common.HexToAddress(cfg.NetworkFeeRecipientCMAccountAddress),
 		NetworkFeeRecipientBotKey:           NetworkFeeRecipientBotECDSAKey,
 		MinChequeDurationUntilExpiration:    big.NewInt(0).SetUint64(cfg.MinChequeDurationUntilExpiration),
+		CashInPeriod:                        time.Duration(cfg.CashInPeriod) * time.Second,
 	}, nil
 }

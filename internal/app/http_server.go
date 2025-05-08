@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -15,14 +16,13 @@ import (
 
 // TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
 
-func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken, port string, service service.Service) *server {
+func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
 	ginRouter := gin.New()
 	s := &server{
 		logger: logger,
 		gin:    ginRouter,
-		port:   port,
 		httpServer: &http.Server{
-			Addr:              ":" + port,
+			Addr:              fmt.Sprintf(":%d", port),
 			Handler:           ginRouter,
 			ReadHeaderTimeout: time.Second * 10,
 		},
@@ -43,7 +43,6 @@ type server struct {
 	logger     *zap.SugaredLogger
 	httpServer *http.Server
 	gin        *gin.Engine
-	port       string
 	service    service.Service
 }
 

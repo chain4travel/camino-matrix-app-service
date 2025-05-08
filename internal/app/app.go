@@ -28,7 +28,7 @@ const (
 )
 
 func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) (*App, error) {
-	ethClient, err := ethclient.Dial(cfg.CChainRPCURL)
+	ethClient, err := ethclient.Dial(cfg.ChainRPCURL)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -94,8 +94,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		return nil, err
 	}
 
-	service, err := service.NewService(
-		ctx,
+	service := service.NewService(
 		logger,
 		cfg.NetworkFeeRecipientCMAccountAddress,
 		serviceStorage,
@@ -103,9 +102,6 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		chainID,
 		cmAccounts,
 	)
-	if err != nil {
-		return nil, err
-	}
 
 	return &App{
 		cfg:           cfg,
@@ -114,7 +110,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		service:       service,
 		chequeHandler: chequeHandler,
 		storage:       serviceStorage,
-		httpServer:    newServer(ctx, logger, cfg.MatrixAccessToken, cfg.HTTPPort, service),
+		httpServer:    newServer(ctx, logger, cfg.Matrix.AccessToken, cfg.Matrix.HTTPPort, service),
 	}, nil
 }
 

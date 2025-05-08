@@ -28,14 +28,13 @@ type Service interface {
 }
 
 func NewService(
-	ctx context.Context,
 	logger *zap.SugaredLogger,
 	networkFeeRecipientCMAccountAddress common.Address,
 	storage Storage,
 	ethClient *ethclient.Client,
 	chainID *big.Int,
 	cmAccounts cmaccounts.Service,
-) (Service, error) {
+) Service {
 	return &service{
 		logger:                              logger,
 		ethClient:                           ethClient,
@@ -43,7 +42,7 @@ func NewService(
 		storage:                             storage,
 		chainID:                             chainID,
 		cmAccounts:                          cmAccounts,
-	}, nil
+	}
 }
 
 type service struct {
@@ -102,7 +101,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		s.logger.Errorf("Couldn't create storage session: %v", err)
 		return false, err
 	}
-	defer session.Abort()
+	defer s.storage.Abort(session)
 
 	switch {
 	case msg.Metadata.ChunkIndex == 0:
@@ -146,7 +145,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 		}
 	}
 
-	return false, session.Commit()
+	return false, s.storage.Commit(session)
 	// TODO @evlekht do cash in amount threshold reached? store unpaid amount in cheque?
 }
 
