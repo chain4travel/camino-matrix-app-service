@@ -1,4 +1,7 @@
-package storage
+// Copyright (C) 2022-2025, Chain4Travel AG. All rights reserved.
+// See the file LICENSE for licensing terms.
+
+package sqlite
 
 import (
 	"context"
@@ -6,19 +9,13 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/chain4travel/camino-matrix-app-service/internal/service"
 	"github.com/jmoiron/sqlx"
 )
 
 const chunkedMessagesTableName = "chunked_messages"
 
-var _ ChunkedMessagesStorage = (*session)(nil)
-
-type ChunkedMessagesStorage interface {
-	GetChunksNumbers(ctx context.Context, messageID string) (storedChunksNumber uint64, expectedChunksNumber uint64, err error)
-	AddChunkedMessage(ctx context.Context, messageID string, chunksNumber uint64) error
-	AddMessageChunk(ctx context.Context, messageID string) error
-	DeleteChunkedMessage(ctx context.Context, messageID string) error
-}
+var _ service.MessageChunksStorage = (*storage)(nil)
 
 type chunkedMessage struct {
 	MessageID            string `db:"message_id"`
@@ -26,30 +23,41 @@ type chunkedMessage struct {
 	ExpectedChunksNumber uint64 `db:"expected_chunks_number"`
 }
 
-func (s *session) GetChunksNumbers(ctx context.Context, messageID string) (uint64, uint64, error) {
+func (s *storage) GetChunksNumbers(ctx context.Context, session service.Session, messageID string) (uint64, uint64, error) {
+	tx, err := getSQLXTx(session)
+	if err != nil {
+		s.base.Logger.Error(err)
+		return 0, 0, err
+	}
+
 	chunkedMessage := &chunkedMessage{}
-	if err := s.tx.StmtxContext(ctx, s.storage.getChunkNumbers).GetContext(ctx, chunkedMessage, messageID); err != nil {
+	if err := tx.StmtxContext(ctx, s.getChunkNumbers).GetContext(ctx, chunkedMessage, messageID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
-			s.logger.Error(err)
+			s.base.Logger.Error(err)
 		}
-		return 0, 0, upgradeErrorAllowNotFound(err)
+		return 0, 0, upgradeError(err)
 	}
 	return chunkedMessage.StoredChunksNumber, chunkedMessage.ExpectedChunksNumber, nil
 }
 
-func (s *session) AddChunkedMessage(ctx context.Context, messageID string, chunksNumber uint64) error {
-	result, err := s.tx.NamedStmtContext(ctx, s.storage.addChunkNumbers).
-		ExecContext(ctx, chunkedMessage{
-			MessageID:            messageID,
-			StoredChunksNumber:   1,
-			ExpectedChunksNumber: chunksNumber,
-		})
+func (s *storage) InsertChunkedMessage(ctx context.Context, session service.Session, messageID string, chunksNumber uint64) error {
+	tx, err := getSQLXTx(session)
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
+		return err
+	}
+
+	result, err := tx.NamedStmtContext(ctx, s.insertChunkNumbers).ExecContext(ctx, chunkedMessage{
+		MessageID:            messageID,
+		StoredChunksNumber:   1,
+		ExpectedChunksNumber: chunksNumber,
+	})
+	if err != nil {
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	}
 	if rowsAffected, err := result.RowsAffected(); err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	} else if rowsAffected != 1 {
 		return fmt.Errorf("error while adding chunked message: expected to affect 1 row, but affected %d", rowsAffected)
@@ -57,14 +65,20 @@ func (s *session) AddChunkedMessage(ctx context.Context, messageID string, chunk
 	return nil
 }
 
-func (s *session) AddMessageChunk(ctx context.Context, messageID string) error {
-	result, err := s.tx.StmtxContext(ctx, s.storage.addMessageChunk).ExecContext(ctx, messageID)
+func (s *storage) AddMessageChunk(ctx context.Context, session service.Session, messageID string) error {
+	tx, err := getSQLXTx(session)
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
+		return err
+	}
+
+	result, err := tx.StmtxContext(ctx, s.addMessageChunk).ExecContext(ctx, messageID)
+	if err != nil {
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	}
 	if rowsAffected, err := result.RowsAffected(); err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	} else if rowsAffected != 1 {
 		return fmt.Errorf("error while adding message chunk: expected to affect 1 row, but affected %d", rowsAffected)
@@ -72,14 +86,20 @@ func (s *session) AddMessageChunk(ctx context.Context, messageID string) error {
 	return nil
 }
 
-func (s *session) DeleteChunkedMessage(ctx context.Context, messageID string) error {
-	result, err := s.tx.StmtxContext(ctx, s.storage.deleteChunkedMessage).ExecContext(ctx, messageID)
+func (s *storage) DeleteChunkedMessage(ctx context.Context, session service.Session, messageID string) error {
+	tx, err := getSQLXTx(session)
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
+		return err
+	}
+
+	result, err := tx.StmtxContext(ctx, s.deleteChunkedMessage).ExecContext(ctx, messageID)
+	if err != nil {
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	}
 	if rowsAffected, err := result.RowsAffected(); err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return upgradeError(err)
 	} else if rowsAffected != 1 {
 		return fmt.Errorf("error while deleting chunked message: expected to affect 1 row, but affected %d", rowsAffected)
@@ -89,21 +109,21 @@ func (s *session) DeleteChunkedMessage(ctx context.Context, messageID string) er
 
 type chunkedMessagesStatements struct {
 	getChunkNumbers, addMessageChunk, deleteChunkedMessage *sqlx.Stmt
-	addChunkNumbers                                        *sqlx.NamedStmt
+	insertChunkNumbers                                     *sqlx.NamedStmt
 }
 
 func (s *storage) prepareChunkedMessagesStmts(ctx context.Context) error {
-	getChunkNumbers, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+	getChunkNumbers, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
 		SELECT stored_chunks_number, expected_chunks_number FROM %s
 		WHERE message_id = ?
 	`, chunkedMessagesTableName))
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return err
 	}
 	s.getChunkNumbers = getChunkNumbers
 
-	addChunkNumbers, err := s.db.PrepareNamedContext(ctx, fmt.Sprintf(`
+	insertChunkNumbers, err := s.base.DB.PrepareNamedContext(ctx, fmt.Sprintf(`
 		INSERT INTO %s (
 			message_id,
 			stored_chunks_number,
@@ -115,28 +135,28 @@ func (s *storage) prepareChunkedMessagesStmts(ctx context.Context) error {
 		)
 	`, chunkedMessagesTableName))
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return err
 	}
-	s.addChunkNumbers = addChunkNumbers
+	s.insertChunkNumbers = insertChunkNumbers
 
-	addMessageChunk, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+	addMessageChunk, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
 		UPDATE %s
 		SET stored_chunks_number = stored_chunks_number + 1
 		WHERE message_id = ?
 	`, chunkedMessagesTableName))
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return err
 	}
 	s.addMessageChunk = addMessageChunk
 
-	deleteChunkedMessage, err := s.db.PreparexContext(ctx, fmt.Sprintf(`
+	deleteChunkedMessage, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
 		DELETE FROM %s
 		WHERE message_id = ?
 	`, chunkedMessagesTableName))
 	if err != nil {
-		s.logger.Error(err)
+		s.base.Logger.Error(err)
 		return err
 	}
 	s.deleteChunkedMessage = deleteChunkedMessage

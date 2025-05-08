@@ -1,0 +1,12 @@
+cash_in_period: 86400
+chain_rpc_url: wss://columbus.camino.network/ext/bc/C/ws
+db:
+    migrations_path: file://./migrations
+    path: camino-matrix-app-service-db
+log_level: debug
+matrix:
+    access_token: ugw8243igya57aaABGFfgeyu
+    http_port: 9090
+min_cheque_duration_until_expiration: 15552000
+network_fee_recipient_bot_key: b466d215f7bf0bcb3be3fc704c16ac5447008e24c2b17bb6c04994f2da850822
+network_fee_recipient_cm_account_address: 0xF6bA5c68A505559c170dC7a30448Ed64D8b9Bc3B

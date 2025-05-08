@@ -1,0 +1,8 @@
+default-headers: 
+  - name: c4t
+    header: |
+      // Copyright (C) 2022-{YEAR}, Chain4Travel AG. All rights reserved.
+      // See the file LICENSE for licensing terms.
+
+headers-excluded-paths:
+  - ".vscode/*.go"

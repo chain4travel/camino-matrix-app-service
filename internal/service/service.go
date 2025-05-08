@@ -1,92 +1,63 @@
+// Copyright (C) 2022-2025, Chain4Travel AG. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 package service
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"errors"
+	"fmt"
 	"math/big"
-	"net/url"
-	"sync"
-	"time"
 
-	"github.com/chain4travel/camino-matrix-app-service/internal/logger"
-	"github.com/chain4travel/camino-matrix-app-service/internal/models"
-	"github.com/chain4travel/camino-matrix-app-service/internal/storage"
-	"github.com/chain4travel/camino-messenger-bot/pkg/cheques"
-	"github.com/chain4travel/camino-messenger-bot/pkg/matrix"
-	"github.com/chain4travel/camino-messenger-contracts/go/contracts/cmaccount"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler"
+	cmaccounts "github.com/chain4travel/camino-messenger-bot/v11/pkg/cm_accounts"
+	"github.com/chain4travel/camino-messenger-bot/v11/pkg/matrix"
+	"github.com/chain4travel/camino-messenger-bot/v11/pkg/metadata"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	lru "github.com/hashicorp/golang-lru/v2"
+	"go.uber.org/zap"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
 
-const (
-	networkFee           uint64 = 100000 // nCAM
-	cashInTxIssueTimeout        = 10 * time.Second
-	cmAccountsCacheSize         = 100
-)
+var (
+	_ Service = (*service)(nil)
 
-var _ Service = (*service)(nil)
+	networkFeeBig = new(big.Int).SetUint64(100000) // nCAM
+
+	ErrNotFound = errors.New("not found")
+)
 
 type Service interface {
 	ProcessEvents(ctx context.Context, events []event.Event) error
-	CashIn(ctx context.Context) error
-	CheckCashInStatus(ctx context.Context) error
 }
 
 func NewService(
-	ctx context.Context,
-	logger logger.Logger,
-	cChainRPCURL url.URL,
-	contractAddr common.Address,
-	networkFeeRecipientKey *ecdsa.PrivateKey,
-	minDurationUntilExpiration uint64,
-	storage storage.Storage,
-) (Service, error) {
-	ethClient, err := ethclient.Dial(cChainRPCURL.String())
-	if err != nil {
-		logger.Error(err)
-		return nil, err
-	}
-
-	chainID, err := ethClient.ChainID(ctx)
-	if err != nil {
-		logger.Error(err)
-		return nil, err
-	}
-
-	cmAccountsCache, err := lru.New[common.Address, *cmaccount.Cmaccount](cmAccountsCacheSize)
-	if err != nil {
-		logger.Error(err)
-		return nil, err
-	}
-
+	logger *zap.SugaredLogger,
+	networkFeeRecipientCMAccountAddress common.Address,
+	storage Storage,
+	ethClient *ethclient.Client,
+	chainID *big.Int,
+	cmAccounts cmaccounts.Service,
+) Service {
 	return &service{
-		logger:                     logger,
-		ethClient:                  ethClient,
-		networkFeeRecipientKey:     networkFeeRecipientKey,
-		networkFeeRecipientAddress: contractAddr,
-		storage:                    storage,
-		chainID:                    chainID,
-		minDurationUntilExpiration: big.NewInt(0).SetUint64(minDurationUntilExpiration),
-		cmAccounts:                 cmAccountsCache,
-	}, nil
+		logger:                              logger,
+		ethClient:                           ethClient,
+		networkFeeRecipientCMAccountAddress: networkFeeRecipientCMAccountAddress,
+		storage:                             storage,
+		chainID:                             chainID,
+		cmAccounts:                          cmAccounts,
+	}
 }
 
 type service struct {
-	logger                     logger.Logger
-	ethClient                  *ethclient.Client
-	storage                    storage.Storage
-	networkFeeRecipientKey     *ecdsa.PrivateKey
-	networkFeeRecipientAddress common.Address
-	chainID                    *big.Int
-	minDurationUntilExpiration *big.Int
-	cmAccounts                 *lru.Cache[common.Address, *cmaccount.Cmaccount]
+	logger                              *zap.SugaredLogger
+	ethClient                           *ethclient.Client
+	storage                             Storage
+	networkFeeRecipientCMAccountAddress common.Address
+	chainID                             *big.Int
+	cmAccounts                          cmaccounts.Service
+	chequeHandler                       chequehandler.ChequeHandler
 }
 
 func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error {
@@ -104,7 +75,7 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 				continue
 			}
 
-			banSender, err := s.processMessage(ctx, msg, evnt.ID)
+			banSender, err := s.processMessage(ctx, msg, evnt.Sender, evnt.ID)
 			if err != nil {
 				return err
 			}
@@ -121,131 +92,71 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 
 // processMessage extracts network fee cheque, verifies it and stores it in the database.
 // Returns true if cheque is not valid or not covering all message chunks, indicating that sender should be banned
-func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, eventID id.EventID) (bool, error) {
+func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
 	s.logger.Debugf("Processing message %s...", eventID)
 	defer s.logger.Debugf("Finished message %s", eventID)
 
+	if err := verifyMetadata(msg.Metadata); err != nil {
+		s.logger.Infof("Event %s, request %s: invalid message metadata: %v", eventID, msg.Metadata.RequestID, err)
+		return true, err
+	}
+
 	session, err := s.storage.NewSession(ctx)
 	if err != nil {
-		s.logger.Errorf("Couldn't create storage session: %v", err)
+		err = fmt.Errorf("failed to create storage session: %w", err)
+		s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 		return false, err
 	}
-	defer session.Abort()
+	defer s.storage.Abort(session)
 
-	storedChunksNumber, maxChunksNumber, err := session.GetChunksNumbers(ctx, msg.Metadata.RequestID)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Errorf("Couldn't create storage session: %v", err)
-		return false, err
-	}
+	switch {
+	case msg.Metadata.ChunkIndex == 0:
+		cheque := msg.GetChequeFor(s.networkFeeRecipientCMAccountAddress)
+		if cheque == nil {
+			s.logger.Infof("Event %s, request %s: cheque not found for ASB owner %s", eventID, msg.Metadata.RequestID, s.networkFeeRecipientCMAccountAddress)
+			return true, nil
+		}
 
-	if storedChunksNumber > 0 && msg.Metadata.ChunkIndex > 0 {
-		// Middle chunk, first chunk is already stored
-		if err := session.AddMessageChunk(ctx, msg.Metadata.RequestID); err != nil {
-			s.logger.Errorf("Failed to add message chunk: %v", err)
+		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), networkFeeBig); err != nil {
+			s.logger.Infof("Event %s, request %s: failed to verify cheque: %v", eventID, msg.Metadata.RequestID, err)
+			return true, nil
+		}
+
+		if err := s.storage.InsertChunkedMessage(ctx, session, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks); err != nil {
+			err = fmt.Errorf("failed to insert chunked message: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 			return false, err
 		}
-		return false, session.Commit()
+
+	case msg.Metadata.ChunkIndex == msg.Metadata.NumberOfChunks-1:
+		if err := s.storage.DeleteChunkedMessage(ctx, session, msg.Metadata.RequestID); err != nil {
+			err = fmt.Errorf("failed to delete chunked message: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+			return false, err
+		}
+
+	default: // Middle chunk, first chunk is already stored
+		_, maxChunksNumber, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID)
+		if err != nil {
+			err = fmt.Errorf("failed to get chunks numbers: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+			return false, err
+		}
+
+		if msg.Metadata.ChunkIndex > maxChunksNumber-1 {
+			s.logger.Infof("Event %s, request %s: chunk index %d is out of range (0-%d)", eventID, msg.Metadata.RequestID, msg.Metadata.ChunkIndex, maxChunksNumber-1)
+			return true, nil
+		}
+
+		if err := s.storage.AddMessageChunk(ctx, session, msg.Metadata.RequestID); err != nil {
+			err = fmt.Errorf("failed to add message chunk: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+			return false, err
+		}
 	}
 
-	cheque := msg.GetChequeFor(s.networkFeeRecipientAddress)
-	if cheque == nil {
-		s.logger.Infof("event (%s) does not contain cheque for ASB owner %s", eventID, s.networkFeeRecipientAddress)
-		return true, nil
-	}
-
-	chequeRecordID := chequeRecordID(cheque)
-	s.logger.Debugf("Received cheque %s %+v", chequeRecordID, cheque.Cheque)
-
-	chequeRecord, err := session.GetChequeRecord(ctx, chequeRecordID)
-	if err != nil && !errors.Is(err, storage.ErrNotFound) {
-		s.logger.Errorf("Failed to get cheque: %v", err)
-		return false, err
-	}
-
-	var previousCheque *cheques.SignedCheque
-	if chequeRecord != nil {
-		previousCheque = &chequeRecord.SignedCheque
-	}
-	if err := cheques.VerifyCheque(
-		previousCheque,
-		cheque,
-		big.NewInt(time.Now().Unix()),
-		s.minDurationUntilExpiration,
-	); err != nil {
-		s.logger.Infof("Failed to verify cheque: %v", err)
-		return true, nil
-	}
-
-	if valid, err := s.verifyChequeWithContract(ctx, cheque); err != nil {
-		s.logger.Errorf("Failed to verify cheque with blockchain: %v", err)
-		return false, err
-	} else if !valid {
-		s.logger.Infof("cheque is invalid (blockchain validation)")
-		return true, nil
-	}
-
-	chequeRecord = chequeRecordFromCheque(chequeRecordID, cheque)
-	if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
-		s.logger.Errorf("Failed to store cheque: %v", err)
-		return false, err
-	}
-
-	expectedAmount := networkFee * msg.Metadata.NumberOfChunks
-	if amount := cheque.Amount.Uint64(); amount < expectedAmount {
-		s.logger.Infof("cheque contain enough fee for all chunks (has %d, need %d, fee-per-chunk %d, chunks %d)",
-			amount, expectedAmount,
-			networkFee, msg.Metadata.NumberOfChunks)
-		return true, session.Commit()
-	}
-
-	err = nil
-	ban := false
-	switch {
-	case storedChunksNumber == 0 && msg.Metadata.ChunkIndex != 0:
-		// Not first chunk, but no first chunk stored
-		s.logger.Infof("event (%s) is not the first chunk, but there is no first chunk stored", eventID)
-		ban = true
-	case storedChunksNumber == 0 && msg.Metadata.ChunkIndex == 0 && msg.Metadata.NumberOfChunks > 1:
-		// First chunk of multi-chunk message was received
-		err = session.AddChunkedMessage(ctx, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks)
-	case storedChunksNumber == maxChunksNumber-1:
-		// Last chunk was received
-		err = session.DeleteChunkedMessage(ctx, msg.Metadata.RequestID)
-	case msg.Metadata.ChunkIndex > 1:
-		// Middle chunk was received
-		err = session.AddMessageChunk(ctx, msg.Metadata.RequestID)
-	}
-	if err != nil {
-		s.logger.Errorf("Failed to store message chunk: %v", err)
-		return false, err
-	}
-
+	return false, s.storage.Commit(session)
 	// TODO @evlekht do cash in amount threshold reached? store unpaid amount in cheque?
-
-	return ban, session.Commit()
-}
-
-func (s *service) verifyChequeWithContract(ctx context.Context, cheque *cheques.SignedCheque) (bool, error) {
-	cmAccount, err := s.getCMAccount(cheque.FromCMAccount)
-	if err != nil {
-		s.logger.Errorf("failed to get cmAccount contract instance: %v", err)
-		return false, err
-	}
-	_, err = cmAccount.VerifyCheque(
-		&bind.CallOpts{Context: ctx},
-		cheque.FromCMAccount,
-		cheque.ToCMAccount,
-		cheque.ToBot,
-		cheque.Counter,
-		cheque.Amount,
-		cheque.CreatedAt,
-		cheque.ExpiresAt,
-		cheque.Signature,
-	)
-	if err != nil && err.Error() == "execution reverted" {
-		return false, nil
-	}
-	return err == nil, err
 }
 
 // TODO @evlekht implement (next ticket) // persist with db, make it durable? not just call it from event receiver?
@@ -253,214 +164,21 @@ func (s *service) banUser(_ context.Context, _ id.UserID) error {
 	return nil
 }
 
-func (s *service) CashIn(ctx context.Context) error {
-	s.logger.Debug("Cashing in...")
-	defer s.logger.Debug("Finished cashing in")
-
-	session, err := s.storage.NewSession(ctx)
-	if err != nil {
-		s.logger.Error(err)
-		return err
+func verifyMetadata(m metadata.Metadata) error {
+	if m.RequestID == "" {
+		return fmt.Errorf("request id is empty")
 	}
-	defer session.Abort()
-
-	chequeRecords, err := session.GetNotCashedChequeRecords(ctx)
-	if err != nil {
-		s.logger.Errorf("failed to get not cashed cheques: %v", err)
-		return err
+	if len(m.Cheques) == 0 {
+		return fmt.Errorf("no cheques")
 	}
-
-	wg := sync.WaitGroup{}
-	for _, chequeRecord := range chequeRecords {
-		s.logger.Debugf("Checking cheque %s status...", chequeRecord)
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			cmAccount, err := s.getCMAccount(chequeRecord.FromCMAccount)
-			if err != nil {
-				s.logger.Errorf("failed to get cmAccount contract instance: %v", err)
-				return
-			}
-
-			transactor, err := bind.NewKeyedTransactorWithChainID(s.networkFeeRecipientKey, s.chainID)
-			if err != nil {
-				s.logger.Error(err)
-				return
-			}
-
-			timedCtx, cancel := context.WithTimeout(ctx, cashInTxIssueTimeout)
-			defer cancel()
-			transactor.Context = timedCtx
-
-			tx, err := cmAccount.CashInCheque(
-				transactor,
-				chequeRecord.FromCMAccount,
-				chequeRecord.ToCMAccount,
-				chequeRecord.ToBot,
-				chequeRecord.Counter,
-				chequeRecord.Amount,
-				chequeRecord.CreatedAt,
-				chequeRecord.ExpiresAt,
-				chequeRecord.Signature,
-			)
-			if err != nil {
-				s.logger.Errorf("failed to cash in cheque %s: %v", chequeRecord, err)
-				return
-			}
-
-			txID := tx.Hash()
-			chequeRecord.TxID = txID
-			chequeRecord.Status = models.ChequeTxStatusProcessing
-
-			// TODO @evlekht if tx will be issued, but then storage will fail to persist it,
-			// TODO tx is still issued and app service will fail to cash in this cheque next time
-			// TODO cause on the node side it is already cashed in
-			// TODO possible solution would be to do dry run, get txID, commit session with txID and status "processing",
-			// TODO then do real run? also do same on startup
-
-			// TODO @evlekht add txCreatedAt field to db and use it for mining timeout ?
-
-			if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
-				s.logger.Errorf("failed to update cheque %s: %v", chequeRecord, err)
-				return
-			}
-		}()
+	if m.NumberOfChunks == 0 {
+		return fmt.Errorf("number of chunks is zero")
 	}
-
-	wg.Wait()
-
-	if err := session.Commit(); err != nil {
-		s.logger.Errorf("failed to commit session: %v", err)
-		return err
+	if m.ChunkIndex >= m.NumberOfChunks {
+		return fmt.Errorf("chunk index %d is greater than number of chunks %d", m.ChunkIndex, m.NumberOfChunks)
 	}
-
-	for _, chequeRecord := range chequeRecords {
-		txID := chequeRecord.TxID
-		go func() {
-			_ = s.checkCashInStatus(context.Background(), txID)
-		}()
-	}
-
+	// TODO @evlekht do we need to verify sender cm account?
+	// TODO verify cheque signer bot with this cm account later (maybe already verified in cheque verification)?
+	// TODO verify cheque from cm account to be equal to message metadata? should cmb verify this as well?
 	return nil
-}
-
-func (s *service) CheckCashInStatus(ctx context.Context) error {
-	session, err := s.storage.NewSession(ctx)
-	if err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	defer session.Abort()
-
-	chequeRecords, err := session.GetChequeRecordsWithPendingTxs(ctx)
-	if err != nil {
-		s.logger.Errorf("failed to get not cashed cheques: %v", err)
-		return err
-	}
-
-	for _, chequeRecord := range chequeRecords {
-		txID := chequeRecord.TxID
-		go func() {
-			_ = s.checkCashInStatus(ctx, txID)
-		}()
-	}
-
-	return nil
-}
-
-func (s *service) checkCashInStatus(ctx context.Context, txID common.Hash) error {
-	// TODO @evlekht timeout? what to do if timeouted?
-	res, err := waitMined(ctx, s.ethClient, txID)
-	if err != nil {
-		s.logger.Errorf("failed to get cash in transaction receipt %s: %v", txID, err)
-		return err
-	}
-
-	session, err := s.storage.NewSession(ctx)
-	if err != nil {
-		s.logger.Error(err)
-		return err
-	}
-	defer session.Abort()
-
-	chequeRecord, err := session.GetChequeRecordByTxID(ctx, txID)
-	if err != nil {
-		s.logger.Errorf("failed to get chequeRecord by txID %s: %v", txID, err)
-		return err
-	}
-
-	txStatus := models.ChequeTxStatusFromTxStatus(res.Status)
-	if chequeRecord.Status == txStatus {
-		return nil
-	}
-
-	chequeRecord.Status = txStatus
-	if err := session.UpsertChequeRecord(ctx, chequeRecord); err != nil {
-		s.logger.Errorf("failed to update chequeRecord %s: %v", chequeRecord, err)
-		return err
-	}
-
-	return session.Commit()
-}
-
-func (s *service) getCMAccount(address common.Address) (*cmaccount.Cmaccount, error) {
-	cmAccount, ok := s.cmAccounts.Get(address)
-	if ok {
-		return cmAccount, nil
-	}
-
-	cmAccount, err := cmaccount.NewCmaccount(address, s.ethClient)
-	if err != nil {
-		s.logger.Errorf("failed to create cmAccount contract instance: %v", err)
-		return nil, err
-	}
-	_ = s.cmAccounts.Add(address, cmAccount)
-
-	return cmAccount, nil
-}
-
-func chequeRecordFromCheque(chequeRecordID common.Hash, cheque *cheques.SignedCheque) *models.ChequeRecord {
-	return &models.ChequeRecord{
-		SignedCheque: cheques.SignedCheque{
-			Cheque: cheques.Cheque{
-				FromCMAccount: cheque.FromCMAccount,
-				ToCMAccount:   cheque.ToCMAccount,
-				ToBot:         cheque.ToBot,
-				Counter:       cheque.Counter,
-				Amount:        cheque.Amount,
-				CreatedAt:     cheque.CreatedAt,
-				ExpiresAt:     cheque.ExpiresAt,
-			},
-			Signature: cheque.Signature,
-		},
-		ChequeRecordID: chequeRecordID,
-	}
-}
-
-func chequeRecordID(cheque *cheques.SignedCheque) common.Hash {
-	return crypto.Keccak256Hash(
-		cheque.FromCMAccount.Bytes(),
-		cheque.ToCMAccount.Bytes(),
-		cheque.ToBot.Bytes(),
-	)
-}
-
-func waitMined(ctx context.Context, b bind.DeployBackend, txID common.Hash) (*types.Receipt, error) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		receipt, err := b.TransactionReceipt(ctx, txID)
-		if err == nil {
-			return receipt, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }
