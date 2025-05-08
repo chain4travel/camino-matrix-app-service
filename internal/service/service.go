@@ -6,11 +6,13 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/chain4travel/camino-messenger-bot/pkg/chequehandler"
 	cmaccounts "github.com/chain4travel/camino-messenger-bot/pkg/cm_accounts"
 	"github.com/chain4travel/camino-messenger-bot/pkg/matrix"
+	"github.com/chain4travel/camino-messenger-bot/pkg/metadata"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -94,14 +96,15 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	s.logger.Debugf("Processing message %s...", eventID)
 	defer s.logger.Debugf("Finished message %s", eventID)
 
-	if err := msg.Metadata.Verify(); err != nil {
-		s.logger.Debugf("Invalid message metadata: %v", err)
-		return false, err
+	if err := verifyMetadata(msg.Metadata); err != nil {
+		s.logger.Infof("Event %s, request %s: invalid message metadata: %v", eventID, msg.Metadata.RequestID, err)
+		return true, err
 	}
 
 	session, err := s.storage.NewSession(ctx)
 	if err != nil {
-		s.logger.Errorf("Couldn't create storage session: %v", err)
+		err = fmt.Errorf("failed to create storage session: %w", err)
+		s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 		return false, err
 	}
 	defer s.storage.Abort(session)
@@ -110,40 +113,44 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 	case msg.Metadata.ChunkIndex == 0:
 		cheque := msg.GetChequeFor(s.networkFeeRecipientCMAccountAddress)
 		if cheque == nil {
-			s.logger.Infof("event (%s) does not contain cheque for ASB owner %s", eventID, s.networkFeeRecipientCMAccountAddress)
+			s.logger.Infof("Event %s, request %s: cheque not found for ASB owner %s", eventID, msg.Metadata.RequestID, s.networkFeeRecipientCMAccountAddress)
 			return true, nil
 		}
 
 		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), networkFeeBig); err != nil {
-			s.logger.Infof("Failed to verify cheque: %v", err)
+			s.logger.Infof("Event %s, request %s: failed to verify cheque: %v", eventID, msg.Metadata.RequestID, err)
 			return true, nil
 		}
 
 		if err := s.storage.InsertChunkedMessage(ctx, session, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks); err != nil {
-			s.logger.Errorf("Failed to store message chunk: %v", err)
+			err = fmt.Errorf("failed to insert chunked message: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 			return false, err
 		}
 
 	case msg.Metadata.ChunkIndex == msg.Metadata.NumberOfChunks-1:
 		if err := s.storage.DeleteChunkedMessage(ctx, session, msg.Metadata.RequestID); err != nil {
-			s.logger.Errorf("Failed to delete message chunk: %v", err)
+			err = fmt.Errorf("failed to delete chunked message: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 			return false, err
 		}
 
 	default: // Middle chunk, first chunk is already stored
 		_, maxChunksNumber, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID)
 		if err != nil {
-			s.logger.Errorf("Couldn't create storage session: %v", err)
+			err = fmt.Errorf("failed to get chunks numbers: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 			return false, err
 		}
 
 		if msg.Metadata.ChunkIndex > maxChunksNumber-1 {
-			s.logger.Infof("event (%s) chunk index %d is out of range (0-%d)", eventID, msg.Metadata.ChunkIndex, maxChunksNumber-1)
+			s.logger.Infof("Event %s, request %s: chunk index %d is out of range (0-%d)", eventID, msg.Metadata.RequestID, msg.Metadata.ChunkIndex, maxChunksNumber-1)
 			return true, nil
 		}
 
 		if err := s.storage.AddMessageChunk(ctx, session, msg.Metadata.RequestID); err != nil {
-			s.logger.Errorf("Failed to add message chunk: %v", err)
+			err = fmt.Errorf("failed to add message chunk: %w", err)
+			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
 			return false, err
 		}
 	}
@@ -154,5 +161,24 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 
 // TODO @evlekht implement (next ticket) // persist with db, make it durable? not just call it from event receiver?
 func (s *service) banUser(_ context.Context, _ id.UserID) error {
+	return nil
+}
+
+func verifyMetadata(m metadata.Metadata) error {
+	if m.RequestID == "" {
+		return fmt.Errorf("request id is empty")
+	}
+	if len(m.Cheques) == 0 {
+		return fmt.Errorf("no cheques")
+	}
+	if m.NumberOfChunks == 0 {
+		return fmt.Errorf("number of chunks is zero")
+	}
+	if m.ChunkIndex >= m.NumberOfChunks {
+		return fmt.Errorf("chunk index %d is greater than number of chunks %d", m.ChunkIndex, m.NumberOfChunks)
+	}
+	// TODO @evlekht do we need to verify sender cm account?
+	// TODO verify cheque signer bot with this cm account later (maybe already verified in cheque verification)?
+	// TODO verify cheque from cm account to be equal to message metadata? should cmb verify this as well?
 	return nil
 }

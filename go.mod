@@ -3,7 +3,7 @@ module github.com/chain4travel/camino-matrix-app-service
 go 1.23.9
 
 require (
-	github.com/chain4travel/camino-messenger-bot v0.6.1-0.20250507142025-d66a9da1af01
+	github.com/chain4travel/camino-messenger-bot v0.6.1-0.20250508110206-8f5b2f36d74c
 	github.com/ethereum/go-ethereum v1.14.12
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-viper/mapstructure/v2 v2.2.1
