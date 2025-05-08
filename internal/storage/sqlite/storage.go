@@ -9,7 +9,7 @@ import (
 	"errors"
 
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
-	"github.com/chain4travel/camino-messenger-bot/pkg/database/sqlite"
+	"github.com/chain4travel/camino-messenger-bot/v11/pkg/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file" // required by migrate
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3" // sql driver, required
