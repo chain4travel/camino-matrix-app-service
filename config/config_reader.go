@@ -86,7 +86,7 @@ func (cr *reader) ReadConfig() (*Config, error) {
 }
 
 func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
-	NetworkFeeRecipientBotECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientBOtKey)
+	NetworkFeeRecipientBotECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientBotKey)
 	if err != nil {
 		err = fmt.Errorf("invalid network fee recipient bot key: %w", err)
 		cr.logger.Error(err)
