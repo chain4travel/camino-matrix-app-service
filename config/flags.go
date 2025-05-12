@@ -12,7 +12,7 @@ const flagKeyConfig = "config"
 func Flags() *pflag.FlagSet {
 	flags := pflag.NewFlagSet("config", pflag.ExitOnError)
 
-	flags.String(flagKeyConfig, "camino-matrix-app-service.yaml", "path to config file dir")
+	flags.String(flagKeyConfig, "camino-matrix-app-service.yaml", "path to config file")
 
 	// Main config flags
 	flags.String("log_level", ".", "Log level.")
