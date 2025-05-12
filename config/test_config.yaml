@@ -1,7 +1,6 @@
 cash_in_period: 86400
 chain_rpc_url: wss://columbus.camino.network/ext/bc/C/ws
 db:
-    migrations_path: file://./migrations
     path: camino-matrix-app-service-db
 log_level: debug
 matrix:

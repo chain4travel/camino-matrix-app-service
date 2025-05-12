@@ -106,12 +106,10 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 		DB: SQLiteDBConfig{
 			Common: cfg.DB,
 			Scheduler: UnparsedSQLiteDBConfig{
-				DBPath:         cfg.DB.DBPath + "/scheduler",
-				MigrationsPath: cfg.DB.MigrationsPath + "/scheduler",
+				DBPath: cfg.DB.DBPath + "/scheduler",
 			},
 			ChequeHandler: UnparsedSQLiteDBConfig{
-				DBPath:         cfg.DB.DBPath + "/cheque_handler",
-				MigrationsPath: cfg.DB.MigrationsPath + "/cheque_handler",
+				DBPath: cfg.DB.DBPath + "/cheque_handler",
 			},
 		},
 		NetworkFeeRecipientCMAccountAddress: common.HexToAddress(cfg.NetworkFeeRecipientCMAccountAddress),
