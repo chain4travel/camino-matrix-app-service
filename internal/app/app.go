@@ -89,7 +89,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	serviceStorage, err := service_storage.New(
 		ctx,
 		logger,
-		cfg.DB.ChequeHandler.DBPath,
+		cfg.DB.Service.DBPath,
 	)
 	if err != nil {
 		logger.Errorf("Failed to create service storage: %v", err)

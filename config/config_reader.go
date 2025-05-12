@@ -111,6 +111,9 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 			ChequeHandler: UnparsedSQLiteDBConfig{
 				DBPath: cfg.DB.DBPath + "/cheque_handler",
 			},
+			Service: UnparsedSQLiteDBConfig{
+				DBPath: cfg.DB.DBPath + "/service",
+			},
 		},
 		NetworkFeeRecipientCMAccountAddress: common.HexToAddress(cfg.NetworkFeeRecipientCMAccountAddress),
 		NetworkFeeRecipientBotKey:           NetworkFeeRecipientBotECDSAKey,
