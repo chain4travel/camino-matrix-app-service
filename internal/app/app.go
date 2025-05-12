@@ -5,7 +5,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
@@ -172,7 +174,11 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		a.logger.Info("Starting http server...")
-		return a.httpServer.Start(gCtx)
+		err := a.httpServer.Start(gCtx)
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
 	})
 
 	// stop
