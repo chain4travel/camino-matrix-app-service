@@ -6,6 +6,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"errors"
 
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
@@ -17,6 +18,9 @@ import (
 )
 
 const dbName = "cheque_handler"
+
+//go:embed migrations/*.sql
+var embedMigrations embed.FS
 
 var (
 	_ Storage                = (*storage)(nil)
@@ -30,8 +34,8 @@ type Storage interface {
 	service.Storage
 }
 
-func New(ctx context.Context, logger *zap.SugaredLogger, cfg sqlite.DBConfig) (Storage, error) {
-	baseDB, err := sqlite.New(logger, cfg, dbName)
+func New(ctx context.Context, logger *zap.SugaredLogger, dbPath string) (Storage, error) {
+	baseDB, err := sqlite.New(logger, embedMigrations, dbPath, dbName)
 	if err != nil {
 		return nil, err
 	}

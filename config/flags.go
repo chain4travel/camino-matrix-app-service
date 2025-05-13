@@ -12,7 +12,7 @@ const flagKeyConfig = "config"
 func Flags() *pflag.FlagSet {
 	flags := pflag.NewFlagSet("config", pflag.ExitOnError)
 
-	flags.String(flagKeyConfig, ".", "path to config file dir")
+	flags.String(flagKeyConfig, "camino-matrix-app-service.yaml", "path to config file")
 
 	// Main config flags
 	flags.String("log_level", ".", "Log level.")
@@ -24,7 +24,6 @@ func Flags() *pflag.FlagSet {
 
 	// DB config flags
 	flags.String("db.path", "camino-matrix-app-service-db", "Path to database dir.")
-	flags.String("db.migrations_path", "file://./migrations", "Path to migration scripts.")
 
 	// Matrix config flags
 	flags.Uint64("matrix.http_port", 9090, "App-service http port.")

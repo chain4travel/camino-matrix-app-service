@@ -1,0 +1,41 @@
+# Example config
+
+
+
+### General
+
+# Log level. Currently only supports debug. Any other value will result in info level.
+log_level: debug
+
+# C-Chain RPC URL
+chain_rpc_url: wss://columbus.camino.network/ext/bc/C/ws
+
+
+
+### Cheque handling
+
+cash_in_period: 86400 # 1 day
+
+# This value will be used in network fee cheque verification
+min_cheque_duration_until_expiration: 15552000 # 6 months
+
+network_fee_recipient_bot_key: b466d215f7bf0bcb3be3fc704c16ac5447008e24c2b17bb6c04994f2da850822
+
+network_fee_recipient_cm_account_address: 0xF6bA5c68A505559c170dC7a30448Ed64D8b9Bc3B
+
+
+
+### Database
+db:
+    # Path to database dir
+    path: camino-matrix-app-service-db
+
+
+
+### Matrix
+matrix:
+    # Homeserver access token, must be the same as the one used in the matrix server config
+    access_token: ugw8243igya57aaABGFfgeyu
+
+    # Port for serving HTTP. Matrix server will send requests to this port.
+    http_port: 9090

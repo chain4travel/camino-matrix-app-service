@@ -32,6 +32,7 @@ type SQLiteDBConfig struct {
 	Common        UnparsedSQLiteDBConfig
 	Scheduler     UnparsedSQLiteDBConfig
 	ChequeHandler UnparsedSQLiteDBConfig
+	Service       UnparsedSQLiteDBConfig
 }
 
 //
@@ -53,14 +54,13 @@ type UnparsedConfig struct {
 	ChainRPCURL                         string                 `mapstructure:"chain_rpc_url"`
 	DB                                  UnparsedSQLiteDBConfig `mapstructure:"db"`
 	NetworkFeeRecipientCMAccountAddress string                 `mapstructure:"network_fee_recipient_cm_account_address"`
-	NetworkFeeRecipientBOtKey           string                 `mapstructure:"network_fee_recipient_bot_key"`
+	NetworkFeeRecipientBotKey           string                 `mapstructure:"network_fee_recipient_bot_key"`
 	MinChequeDurationUntilExpiration    uint64                 `mapstructure:"min_cheque_duration_until_expiration"` // seconds
 	CashInPeriod                        int64                  `mapstructure:"cash_in_period"`                       // seconds
 }
 
 type UnparsedSQLiteDBConfig struct {
-	DBPath         string `mapstructure:"path"`
-	MigrationsPath string `mapstructure:"migrations_path"`
+	DBPath string `mapstructure:"path"`
 }
 
 func (cfg *Config) unparse() *UnparsedConfig {
@@ -70,7 +70,7 @@ func (cfg *Config) unparse() *UnparsedConfig {
 		ChainRPCURL:                         cfg.ChainRPCURL,
 		DB:                                  cfg.DB.Common,
 		NetworkFeeRecipientCMAccountAddress: cfg.NetworkFeeRecipientCMAccountAddress.Hex(),
-		NetworkFeeRecipientBOtKey:           hex.EncodeToString(crypto.FromECDSA(cfg.NetworkFeeRecipientBotKey)),
+		NetworkFeeRecipientBotKey:           hex.EncodeToString(crypto.FromECDSA(cfg.NetworkFeeRecipientBotKey)),
 		MinChequeDurationUntilExpiration:    cfg.MinChequeDurationUntilExpiration.Uint64(),
 		CashInPeriod:                        int64(cfg.CashInPeriod / time.Second),
 	}

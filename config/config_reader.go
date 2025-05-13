@@ -86,7 +86,7 @@ func (cr *reader) ReadConfig() (*Config, error) {
 }
 
 func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
-	NetworkFeeRecipientBotECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientBOtKey)
+	NetworkFeeRecipientBotECDSAKey, err := crypto.HexToECDSA(cfg.NetworkFeeRecipientBotKey)
 	if err != nil {
 		err = fmt.Errorf("invalid network fee recipient bot key: %w", err)
 		cr.logger.Error(err)
@@ -106,12 +106,13 @@ func (cr *reader) parseConfig(cfg *UnparsedConfig) (*Config, error) {
 		DB: SQLiteDBConfig{
 			Common: cfg.DB,
 			Scheduler: UnparsedSQLiteDBConfig{
-				DBPath:         cfg.DB.DBPath + "/scheduler",
-				MigrationsPath: cfg.DB.MigrationsPath + "/scheduler",
+				DBPath: cfg.DB.DBPath + "/scheduler",
 			},
 			ChequeHandler: UnparsedSQLiteDBConfig{
-				DBPath:         cfg.DB.DBPath + "/cheque_handler",
-				MigrationsPath: cfg.DB.MigrationsPath + "/cheque_handler",
+				DBPath: cfg.DB.DBPath + "/cheque_handler",
+			},
+			Service: UnparsedSQLiteDBConfig{
+				DBPath: cfg.DB.DBPath + "/service",
 			},
 		},
 		NetworkFeeRecipientCMAccountAddress: common.HexToAddress(cfg.NetworkFeeRecipientCMAccountAddress),

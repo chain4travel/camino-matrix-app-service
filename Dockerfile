@@ -17,6 +17,5 @@ RUN apk add libc6-compat
 
 WORKDIR /camino-matrix-app-service
 COPY --from=builder /camino-matrix-app-service/build .
-COPY --from=builder /camino-matrix-app-service/migrations ./migrations
 
 ENTRYPOINT [ "./camino-matrix-app-service" ]

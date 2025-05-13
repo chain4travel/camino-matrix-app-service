@@ -5,7 +5,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
@@ -14,7 +16,6 @@ import (
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler"
 	cheque_handler_storage "github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler/storage/sqlite"
 	cmaccounts "github.com/chain4travel/camino-messenger-bot/v11/pkg/cm_accounts"
-	"github.com/chain4travel/camino-messenger-bot/v11/pkg/database/sqlite"
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/scheduler"
 	scheduler_storage "github.com/chain4travel/camino-messenger-bot/v11/pkg/scheduler/storage/sqlite"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -52,7 +53,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	chequeHandlerStorage, err := cheque_handler_storage.New(
 		ctx,
 		logger,
-		sqlite.DBConfig(cfg.DB.ChequeHandler),
+		cfg.DB.ChequeHandler.DBPath,
 	)
 	if err != nil {
 		logger.Errorf("Failed to create cheque handler storage: %v", err)
@@ -76,7 +77,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		return nil, err
 	}
 
-	schedulerStorage, err := scheduler_storage.New(ctx, logger, sqlite.DBConfig(cfg.DB.Scheduler))
+	schedulerStorage, err := scheduler_storage.New(ctx, logger, cfg.DB.Scheduler.DBPath)
 	if err != nil {
 		logger.Errorf("Failed to create storage: %v", err)
 		return nil, err
@@ -90,7 +91,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	serviceStorage, err := service_storage.New(
 		ctx,
 		logger,
-		sqlite.DBConfig(cfg.DB.ChequeHandler),
+		cfg.DB.Service.DBPath,
 	)
 	if err != nil {
 		logger.Errorf("Failed to create service storage: %v", err)
@@ -173,7 +174,11 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		a.logger.Info("Starting http server...")
-		return a.httpServer.Start(gCtx)
+		err := a.httpServer.Start(gCtx)
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
 	})
 
 	// stop
