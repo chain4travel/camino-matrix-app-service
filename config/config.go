@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+var NetworkFee = new(big.Int).SetUint64(300000000000000) // 0.00003 CAM
+
 //
 // ******* Parsed config *******
 //

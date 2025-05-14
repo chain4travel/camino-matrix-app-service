@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/chain4travel/camino-matrix-app-service/config"
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler"
 	cmaccounts "github.com/chain4travel/camino-messenger-bot/v11/pkg/cm_accounts"
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/matrix"
@@ -22,8 +23,6 @@ import (
 
 var (
 	_ Service = (*service)(nil)
-
-	networkFeeBig = new(big.Int).SetUint64(100000) // nCAM
 
 	ErrNotFound = errors.New("not found")
 )
@@ -117,7 +116,7 @@ func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMe
 			return true, nil
 		}
 
-		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), networkFeeBig); err != nil {
+		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), config.NetworkFee); err != nil {
 			s.logger.Infof("Event %s, request %s: failed to verify cheque: %v", eventID, msg.Metadata.RequestID, err)
 			return true, nil
 		}
