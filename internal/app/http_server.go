@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,7 +20,7 @@ import (
 
 // TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
 
-func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
+func newServer(logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
 	ginRouter := gin.New()
 	s := &server{
 		logger: logger,
@@ -49,9 +50,26 @@ type server struct {
 	service    service.Service
 }
 
-func (s *server) Start(_ context.Context) error {
-	s.logger.Infof("Started HTTP server on %s", s.httpServer.Addr)
-	return s.httpServer.ListenAndServe()
+func (s *server) Start() chan error {
+	errChan := make(chan error)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("gRPC server panicked: %v", r)
+				s.logger.Errorf("recovered from panic: %v", err)
+				errChan <- err
+			}
+			close(errChan)
+		}()
+
+		s.logger.Infof("HTTP server listen and serve on %s", s.httpServer.Addr)
+
+		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Errorf("HTTP server stopped listen and serve with error: %w", err)
+			errChan <- err
+		}
+	}()
+	return errChan
 }
 
 func (s *server) Stop(ctx context.Context) error {

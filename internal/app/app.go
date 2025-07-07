@@ -112,7 +112,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		service:       service,
 		chequeHandler: chequeHandler,
 		storage:       serviceStorage,
-		httpServer:    newServer(ctx, logger, cfg.Matrix.AccessToken, cfg.Matrix.HTTPPort, service),
+		httpServer:    newServer(logger, cfg.Matrix.AccessToken, cfg.Matrix.HTTPPort, service),
 	}, nil
 }
 
@@ -170,7 +170,7 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error { // TODO@ move http to goroutine
+	g.Go(func() error {
 		if !awaitChans(ctx,
 			cashInStatusCheckDone,
 			schedulerStarted,
@@ -179,8 +179,11 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		a.logger.Info("Starting http server...")
-		err := a.httpServer.Start(ctx)
-		if !errors.Is(err, http.ErrServerClosed) {
+		errChan := a.httpServer.Start()
+		a.logger.Info("http server started.")
+
+		if err := <-errChan; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			a.logger.Errorf("http server stopped with error: %v", err)
 			return err
 		}
 		return nil
