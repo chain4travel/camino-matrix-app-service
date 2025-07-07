@@ -44,7 +44,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		return nil, err
 	}
 
-	cmAccounts, err := cmaccounts.NewService(logger, cmAccountsCacheSize, ethClient)
+	cmAccounts, err := cmaccounts.NewService(ctx, logger, cmAccountsCacheSize, ethClient)
 	if err != nil {
 		logger.Errorf("Failed to create cm accounts service: %v", err)
 		return nil, err
@@ -84,9 +84,6 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	}
 
 	scheduler := scheduler.New(logger, schedulerStorage, clockwork.NewRealClock())
-	scheduler.RegisterJobHandler(cashInJobName, func() {
-		_ = chequeHandler.CashIn(context.Background())
-	})
 
 	serviceStorage, err := service_storage.New(
 		ctx,
@@ -104,6 +101,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 		serviceStorage,
 		ethClient,
 		chainID,
+		chequeHandler,
 		cmAccounts,
 	)
 
@@ -129,7 +127,7 @@ type App struct {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	g, gCtx := errgroup.WithContext(ctx) // error here will call gCtx.cancel() and finish other Go-s
+	g, ctx := errgroup.WithContext(ctx) // error here will call gCtx.cancel() and finish other Go-s
 
 	// run
 
@@ -138,8 +136,8 @@ func (a *App) Run(ctx context.Context) error {
 
 	g.Go(func() error {
 		a.logger.Info("Starting start-up cash-in status check...")
-		if err := a.chequeHandler.CheckCashInStatus(gCtx); err != nil {
-			return fmt.Errorf("failed to check start-up cash-in status: %w", err)
+		if err := a.chequeHandler.CheckCashInStatus(ctx); err != nil {
+			return fmt.Errorf("failed to do start-up cash-in status check: %w", err)
 		}
 		a.logger.Info("Start-up cash-in status check done.")
 		close(cashInStatusCheckDone)
@@ -147,26 +145,33 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	g.Go(func() error {
-		if !awaitChan(gCtx, cashInStatusCheckDone) {
+		if !awaitChan(ctx, cashInStatusCheckDone) {
 			return nil
 		}
-
 		a.logger.Info("Starting scheduler...")
 
-		if err := a.scheduler.Schedule(gCtx, a.cfg.CashInPeriod, cashInJobName); err != nil {
+		a.scheduler.RegisterJobHandler(cashInJobName, func() {
+			if err := a.chequeHandler.CashIn(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				a.logger.Errorf("Failed to do scheduled cash in: %v", err)
+				return
+			}
+		})
+
+		if err := a.scheduler.Schedule(ctx, a.cfg.CashInPeriod, cashInJobName); err != nil {
 			return fmt.Errorf("failed to schedule cash in job: %w", err)
 		}
-		if err := a.scheduler.Start(gCtx); err != nil {
+		if err := a.scheduler.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start scheduler: %w", err)
 		}
 
 		a.logger.Info("Scheduler started.")
 		close(schedulerStarted)
+
 		return nil
 	})
 
-	g.Go(func() error {
-		if !awaitChans(gCtx,
+	g.Go(func() error { // TODO@ move http to goroutine
+		if !awaitChans(ctx,
 			cashInStatusCheckDone,
 			schedulerStarted,
 		) {
@@ -174,7 +179,7 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		a.logger.Info("Starting http server...")
-		err := a.httpServer.Start(gCtx)
+		err := a.httpServer.Start(ctx)
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
@@ -184,21 +189,34 @@ func (a *App) Run(ctx context.Context) error {
 	// stop
 
 	g.Go(func() error {
-		<-gCtx.Done()
+		<-ctx.Done()
 		a.logger.Debug("Stopping HTTP server...")
-		return a.httpServer.Stop(context.Background())
+		// we use background context, because we want to try to shutdown http server gracefully regardless
+		if err := a.httpServer.Stop(context.Background()); err != nil && !errors.Is(err, context.Canceled) {
+			a.logger.Errorf("Failed to stop HTTP server: %v", err)
+			return fmt.Errorf("failed to stop HTTP server: %w", err)
+		}
+		a.logger.Debug("HTTP server stopped.")
+		return nil
 	})
 
 	g.Go(func() error {
-		<-gCtx.Done()
+		<-ctx.Done()
 		a.logger.Debug("Closing storage...")
-		return a.storage.Close()
+		if err := a.storage.Close(); err != nil {
+			a.logger.Errorf("Failed to close storage: %v", err)
+			return fmt.Errorf("failed to close storage: %w", err)
+		}
+		a.logger.Debug("Storage closed.")
+		return nil
 	})
 
 	g.Go(func() error {
-		<-gCtx.Done()
+		<-ctx.Done()
 		a.logger.Debug("Stopping scheduler...")
-		return a.scheduler.Stop()
+		a.scheduler.Stop()
+		a.logger.Debug("Scheduler stopped.")
+		return nil
 	})
 
 	// wait

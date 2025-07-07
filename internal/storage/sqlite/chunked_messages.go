@@ -18,12 +18,12 @@ const chunkedMessagesTableName = "chunked_messages"
 var _ service.MessageChunksStorage = (*storage)(nil)
 
 type chunkedMessage struct {
-	MessageID            string `db:"message_id"`
-	StoredChunksNumber   uint64 `db:"stored_chunks_number"`
-	ExpectedChunksNumber uint64 `db:"expected_chunks_number"`
+	MessageID           string `db:"message_id"`
+	StoredChunksCount   uint32 `db:"stored_chunks_count"`
+	ExpectedChunksCount uint32 `db:"expected_chunks_count"`
 }
 
-func (s *storage) GetChunksNumbers(ctx context.Context, session service.Session, messageID string) (uint64, uint64, error) {
+func (s *storage) GetChunksCount(ctx context.Context, session service.Session, messageID string) (uint32, uint32, error) {
 	tx, err := getSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
@@ -31,26 +31,26 @@ func (s *storage) GetChunksNumbers(ctx context.Context, session service.Session,
 	}
 
 	chunkedMessage := &chunkedMessage{}
-	if err := tx.StmtxContext(ctx, s.getChunkNumbers).GetContext(ctx, chunkedMessage, messageID); err != nil {
+	if err := tx.StmtxContext(ctx, s.getChunksCount).GetContext(ctx, chunkedMessage, messageID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			s.base.Logger.Error(err)
 		}
 		return 0, 0, upgradeError(err)
 	}
-	return chunkedMessage.StoredChunksNumber, chunkedMessage.ExpectedChunksNumber, nil
+	return chunkedMessage.StoredChunksCount, chunkedMessage.ExpectedChunksCount, nil
 }
 
-func (s *storage) InsertChunkedMessage(ctx context.Context, session service.Session, messageID string, chunksNumber uint64) error {
+func (s *storage) AddFirstChunk(ctx context.Context, session service.Session, messageID string, expectedChunksCount, storedChunksCount uint32) error {
 	tx, err := getSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
 
-	result, err := tx.NamedStmtContext(ctx, s.insertChunkNumbers).ExecContext(ctx, chunkedMessage{
-		MessageID:            messageID,
-		StoredChunksNumber:   1,
-		ExpectedChunksNumber: chunksNumber,
+	result, err := tx.NamedStmtContext(ctx, s.upsertFirstChunk).ExecContext(ctx, chunkedMessage{
+		MessageID:           messageID,
+		StoredChunksCount:   storedChunksCount,
+		ExpectedChunksCount: expectedChunksCount,
 	})
 	if err != nil {
 		s.base.Logger.Error(err)
@@ -65,14 +65,14 @@ func (s *storage) InsertChunkedMessage(ctx context.Context, session service.Sess
 	return nil
 }
 
-func (s *storage) AddMessageChunk(ctx context.Context, session service.Session, messageID string) error {
+func (s *storage) UpdateChunksCount(ctx context.Context, session service.Session, messageID string, storedChunksCount uint32) error {
 	tx, err := getSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
 
-	result, err := tx.StmtxContext(ctx, s.addMessageChunk).ExecContext(ctx, messageID)
+	result, err := tx.NamedStmtContext(ctx, s.upsertChunksCount).ExecContext(ctx, messageID)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return upgradeError(err)
@@ -108,48 +108,62 @@ func (s *storage) DeleteChunkedMessage(ctx context.Context, session service.Sess
 }
 
 type chunkedMessagesStatements struct {
-	getChunkNumbers, addMessageChunk, deleteChunkedMessage *sqlx.Stmt
-	insertChunkNumbers                                     *sqlx.NamedStmt
+	getChunksCount, deleteChunkedMessage *sqlx.Stmt
+	upsertFirstChunk                     *sqlx.NamedStmt
+	upsertChunksCount                    *sqlx.NamedStmt
 }
 
 func (s *storage) prepareChunkedMessagesStmts(ctx context.Context) error {
-	getChunkNumbers, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
-		SELECT stored_chunks_number, expected_chunks_number FROM %s
+	getChunksCount, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
+		SELECT stored_chunks_count, expected_chunks_count FROM %s
 		WHERE message_id = ?
 	`, chunkedMessagesTableName))
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
-	s.getChunkNumbers = getChunkNumbers
+	s.getChunksCount = getChunksCount
 
-	insertChunkNumbers, err := s.base.DB.PrepareNamedContext(ctx, fmt.Sprintf(`
+	upsertFirstChunk, err := s.base.DB.PrepareNamedContext(ctx, fmt.Sprintf(`
 		INSERT INTO %s (
 			message_id,
-			stored_chunks_number,
-			expected_chunks_number
+			stored_chunks_count,
+			expected_chunks_count
 		) VALUES (
 			:message_id,
-			:stored_chunks_number,
-			:expected_chunks_number
+			:stored_chunks_count,
+			:expected_chunks_count
 		)
+		ON CONFLICT(message_id)
+		DO UPDATE SET
+			stored_chunks_count = excluded.stored_chunks_count,
+			expected_chunks_count = excluded.expected_chunks_count
 	`, chunkedMessagesTableName))
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
-	s.insertChunkNumbers = insertChunkNumbers
+	s.upsertFirstChunk = upsertFirstChunk
 
-	addMessageChunk, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
-		UPDATE %s
-		SET stored_chunks_number = stored_chunks_number + 1
-		WHERE message_id = ?
+	upsertChunksCount, err := s.base.DB.PrepareNamedContext(ctx, fmt.Sprintf(`
+		INSERT INTO %s (
+			message_id,
+			stored_chunks_count,
+			expected_chunks_count
+		) VALUES (
+			:message_id,
+			:stored_chunks_count,
+			0
+		)
+		ON CONFLICT(message_id)
+		DO UPDATE SET
+			stored_chunks_count = excluded.stored_chunks_count
 	`, chunkedMessagesTableName))
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
-	s.addMessageChunk = addMessageChunk
+	s.upsertChunksCount = upsertChunksCount
 
 	deleteChunkedMessage, err := s.base.DB.PreparexContext(ctx, fmt.Sprintf(`
 		DELETE FROM %s
