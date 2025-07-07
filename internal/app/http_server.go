@@ -55,7 +55,7 @@ func (s *server) Start() chan error {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				err := fmt.Errorf("gRPC server panicked: %v", r)
+				err := fmt.Errorf("HTTP server panicked: %v", r)
 				s.logger.Errorf("recovered from panic: %v", err)
 				errChan <- err
 			}
