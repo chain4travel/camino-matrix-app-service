@@ -61,19 +61,24 @@ type service struct {
 }
 
 func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error {
-	for _, event := range events {
-		if event.Type.Type != matrix.EventTypeSignedMessage.Type && event.Type.Type != matrix.EventTypeMessageChunk.Type {
-			s.logger.Debugf("Skipping event %s (%s) from %s, not a signed message or message chunk", event.ID, event.Type.Type, event.Sender)
+	for _, evnt := range events {
+		if evnt.Type.Type != matrix.EventTypeSignedMessage.Type && evnt.Type.Type != matrix.EventTypeMessageChunk.Type {
+			s.logger.Debugf("Skipping event %s (%s) from %s, not a signed message or message chunk", evnt.ID, evnt.Type.Type, evnt.Sender)
 			continue
 		}
 
-		banSender, err := s.processMessageEvent(ctx, &event)
+		// class is not transported and mautrix lib guess it
+		// but here we don't use mautrix lib to receive events,
+		// so we need to set it manually to allow mautrix to parse content correctly
+		evnt.Type.Class = event.MessageEventType
+
+		banSender, err := s.processMessageEvent(ctx, &evnt)
 		if err != nil {
 			return err
 		}
 
 		if banSender {
-			if err := s.banUser(ctx, event.Sender); err != nil {
+			if err := s.banUser(ctx, evnt.Sender); err != nil {
 				return err
 			}
 		}
@@ -81,24 +86,24 @@ func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error
 	return nil
 }
 
-func (s *service) processMessageEvent(ctx context.Context, event *event.Event) (bool, error) {
-	s.logger.Debugf("Processing event %s (%s) from %s", event.ID, event.Type.Type, event.Sender)
-	defer s.logger.Debugf("Finished processing event %s (%s) from %s", event.ID, event.Type.Type, event.Sender)
+func (s *service) processMessageEvent(ctx context.Context, evnt *event.Event) (bool, error) {
+	s.logger.Debugf("Processing event %s (%s) from %s", evnt.ID, evnt.Type.Type, evnt.Sender)
+	defer s.logger.Debugf("Finished processing event %s (%s) from %s", evnt.ID, evnt.Type.Type, evnt.Sender)
 
-	if err := event.Content.ParseRaw(event.Type); err != nil {
+	if err := evnt.Content.ParseRaw(evnt.Type); err != nil { // TODO@ type.Class is 0, not 1! failed to guess class, I think!
 		s.logger.Errorf("Failed to parse event content: %v", err)
 		// TODO @evlekht ban users for malformed events? e.g. we fail to parse? might be server/lib fault, though it shouldn't just pop up out of nowhere
 		return false, err
 	}
 
-	switch eventContent := event.Content.Parsed.(type) {
+	switch eventContent := evnt.Content.Parsed.(type) {
 	case *matrix.SignedMessageEventContent:
-		return s.processSignedMessageEvent(ctx, eventContent, event.Sender, event.ID)
+		return s.processSignedMessageEvent(ctx, eventContent, evnt.Sender, evnt.ID)
 	case *matrix.MessageChunkEventContent:
-		return s.processMessageChunkEvent(ctx, eventContent, event.Sender, event.ID)
+		return s.processMessageChunkEvent(ctx, eventContent, evnt.Sender, evnt.ID)
 	}
 
-	return false, fmt.Errorf("unsupported event type: %s", event.Type.Type)
+	return false, fmt.Errorf("unsupported event type: %s", evnt.Type.Type)
 }
 
 func (s *service) processSignedMessageEvent(ctx context.Context, eventContent *matrix.SignedMessageEventContent, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
