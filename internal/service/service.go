@@ -13,7 +13,6 @@ import (
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler"
 	cmaccounts "github.com/chain4travel/camino-messenger-bot/v11/pkg/cm_accounts"
 	"github.com/chain4travel/camino-messenger-bot/v11/pkg/matrix"
-	"github.com/chain4travel/camino-messenger-bot/v11/pkg/metadata"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -37,6 +36,7 @@ func NewService(
 	storage Storage,
 	ethClient *ethclient.Client,
 	chainID *big.Int,
+	chequeHandler chequehandler.ChequeHandler,
 	cmAccounts cmaccounts.Service,
 ) Service {
 	return &service{
@@ -46,6 +46,7 @@ func NewService(
 		storage:                             storage,
 		chainID:                             chainID,
 		cmAccounts:                          cmAccounts,
+		chequeHandler:                       chequeHandler,
 	}
 }
 
@@ -61,123 +62,145 @@ type service struct {
 
 func (s *service) ProcessEvents(ctx context.Context, events []event.Event) error {
 	for _, evnt := range events {
-		if evnt.Type.Type == matrix.EventTypeC4TMessage.Type {
-			if err := evnt.Content.ParseRaw(matrix.EventTypeC4TMessage); err != nil {
-				s.logger.Errorf("Failed to parse event content: %v", err)
-				continue
-			}
+		if evnt.Type.Type != matrix.EventTypeSignedMessage.Type && evnt.Type.Type != matrix.EventTypeMessageChunk.Type {
+			s.logger.Debugf("Skipping event %s (%s) from %s, not a signed message or message chunk", evnt.ID, evnt.Type.Type, evnt.Sender)
+			continue
+		}
 
-			msg, ok := evnt.Content.Parsed.(*matrix.CaminoMatrixMessage)
-			if !ok {
-				err := errors.New("unexpected event content type")
-				s.logger.Error(err)
-				continue
-			}
+		// class is not transported and mautrix lib guess it
+		// but here we don't use mautrix lib to receive events,
+		// so we need to set it manually to allow mautrix to parse content correctly
+		evnt.Type.Class = event.MessageEventType
 
-			banSender, err := s.processMessage(ctx, msg, evnt.Sender, evnt.ID)
-			if err != nil {
+		banSender, err := s.processMessageEvent(ctx, &evnt)
+		if err != nil {
+			return err
+		}
+
+		if banSender {
+			if err := s.banUser(ctx, evnt.Sender); err != nil {
 				return err
-			}
-
-			if banSender {
-				if err := s.banUser(ctx, evnt.Sender); err != nil {
-					return err
-				}
 			}
 		}
 	}
 	return nil
 }
 
-// processMessage extracts network fee cheque, verifies it and stores it in the database.
-// Returns true if cheque is not valid or not covering all message chunks, indicating that sender should be banned
-func (s *service) processMessage(ctx context.Context, msg *matrix.CaminoMatrixMessage, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
-	s.logger.Debugf("Processing message %s...", eventID)
-	defer s.logger.Debugf("Finished message %s", eventID)
+func (s *service) processMessageEvent(ctx context.Context, evnt *event.Event) (bool, error) {
+	s.logger.Debugf("Processing event %s (%s) from %s", evnt.ID, evnt.Type.Type, evnt.Sender)
+	defer s.logger.Debugf("Finished processing event %s (%s) from %s", evnt.ID, evnt.Type.Type, evnt.Sender)
 
-	if err := verifyMetadata(msg.Metadata); err != nil {
-		s.logger.Infof("Event %s, request %s: invalid message metadata: %v", eventID, msg.Metadata.RequestID, err)
+	if err := evnt.Content.ParseRaw(evnt.Type); err != nil { // TODO@ type.Class is 0, not 1! failed to guess class, I think!
+		s.logger.Errorf("Failed to parse event content: %v", err)
+		// TODO @evlekht ban users for malformed events? e.g. we fail to parse? might be server/lib fault, though it shouldn't just pop up out of nowhere
+		return false, err
+	}
+
+	switch eventContent := evnt.Content.Parsed.(type) {
+	case *matrix.SignedMessageEventContent:
+		return s.processSignedMessageEvent(ctx, eventContent, evnt.Sender, evnt.ID)
+	case *matrix.MessageChunkEventContent:
+		return s.processMessageChunkEvent(ctx, eventContent, evnt.Sender, evnt.ID)
+	}
+
+	return false, fmt.Errorf("unsupported event type: %s", evnt.Type.Type)
+}
+
+func (s *service) processSignedMessageEvent(ctx context.Context, eventContent *matrix.SignedMessageEventContent, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
+	if err := eventContent.Verify(); err != nil {
+		s.logger.Infof("Event %s, message %s from %s: invalid event content: %v", eventID, eventContent.MessageID, senderBotUserID, err)
 		return true, err
 	}
 
 	session, err := s.storage.NewSession(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to create storage session: %w", err)
-		s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+		s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
 		return false, err
 	}
 	defer s.storage.Abort(session)
 
-	switch {
-	case msg.Metadata.ChunkIndex == 0:
-		cheque := msg.GetChequeFor(s.networkFeeRecipientCMAccountAddress)
-		if cheque == nil {
-			s.logger.Infof("Event %s, request %s: cheque not found for ASB owner %s", eventID, msg.Metadata.RequestID, s.networkFeeRecipientCMAccountAddress)
-			return true, nil
-		}
+	if err := s.chequeHandler.VerifyCheque(
+		ctx,
+		&eventContent.NetworkFeeCheque,
+		matrix.AddressFromUserID(senderBotUserID),
+		config.NetworkFee,
+	); err != nil {
+		s.logger.Infof("Event %s, message %s: failed to verify cheque: %v", eventID, eventContent.MessageID, err)
+		return true, nil
+	}
 
-		if err := s.chequeHandler.VerifyCheque(ctx, cheque, matrix.AddressFromUserID(senderBotUserID), config.NetworkFee); err != nil {
-			s.logger.Infof("Event %s, request %s: failed to verify cheque: %v", eventID, msg.Metadata.RequestID, err)
-			return true, nil
-		}
+	storedChunksCount, _, err := s.storage.GetChunksCount(ctx, session, eventContent.MessageID)
+	if err != nil {
+		err = fmt.Errorf("failed to get chunks count: %w", err)
+		s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+		return false, err
+	}
 
-		if err := s.storage.InsertChunkedMessage(ctx, session, msg.Metadata.RequestID, msg.Metadata.NumberOfChunks); err != nil {
-			err = fmt.Errorf("failed to insert chunked message: %w", err)
-			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
-			return false, err
-		}
+	newChunksCount := storedChunksCount + 1
 
-	case msg.Metadata.ChunkIndex == msg.Metadata.NumberOfChunks-1:
-		if err := s.storage.DeleteChunkedMessage(ctx, session, msg.Metadata.RequestID); err != nil {
+	if newChunksCount > eventContent.ChunksCount {
+		s.logger.Infof("Event %s, message %s: received more chunks than expected (%d > %d)", eventID, eventContent.MessageID, newChunksCount, eventContent.ChunksCount)
+		return true, nil
+	}
+
+	if newChunksCount == eventContent.ChunksCount {
+		if err := s.storage.DeleteChunkedMessage(ctx, session, eventContent.MessageID); err != nil {
 			err = fmt.Errorf("failed to delete chunked message: %w", err)
-			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+			s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
 			return false, err
 		}
-
-	default: // Middle chunk, first chunk is already stored
-		_, maxChunksNumber, err := s.storage.GetChunksNumbers(ctx, session, msg.Metadata.RequestID)
-		if err != nil {
-			err = fmt.Errorf("failed to get chunks numbers: %w", err)
-			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
-			return false, err
-		}
-
-		if msg.Metadata.ChunkIndex > maxChunksNumber-1 {
-			s.logger.Infof("Event %s, request %s: chunk index %d is out of range (0-%d)", eventID, msg.Metadata.RequestID, msg.Metadata.ChunkIndex, maxChunksNumber-1)
-			return true, nil
-		}
-
-		if err := s.storage.AddMessageChunk(ctx, session, msg.Metadata.RequestID); err != nil {
-			err = fmt.Errorf("failed to add message chunk: %w", err)
-			s.logger.Errorf("Event %s, request %s: %v", eventID, msg.Metadata.RequestID, err)
+	} else {
+		if err := s.storage.AddFirstChunk(ctx, session, eventContent.MessageID, eventContent.ChunksCount, newChunksCount); err != nil {
+			err = fmt.Errorf("failed to add first chunk: %w", err)
+			s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
 			return false, err
 		}
 	}
 
 	return false, s.storage.Commit(session)
-	// TODO @evlekht do cash in amount threshold reached? store unpaid amount in cheque?
+}
+
+func (s *service) processMessageChunkEvent(ctx context.Context, eventContent *matrix.MessageChunkEventContent, senderBotUserID id.UserID, eventID id.EventID) (bool, error) {
+	if err := eventContent.Verify(); err != nil {
+		s.logger.Infof("Event %s, message %s from %s: invalid event content: %v", eventID, eventContent.MessageID, senderBotUserID, err)
+		return true, err
+	}
+
+	session, err := s.storage.NewSession(ctx)
+	if err != nil {
+		err = fmt.Errorf("failed to create storage session: %w", err)
+		s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+		return false, err
+	}
+	defer s.storage.Abort(session)
+
+	storedChunksCount, expectedChunksCount, err := s.storage.GetChunksCount(ctx, session, eventContent.MessageID)
+	if err != nil {
+		err = fmt.Errorf("failed to get chunks count: %w", err)
+		s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+		return false, err
+	}
+
+	newChunksCount := storedChunksCount + 1
+
+	if newChunksCount == expectedChunksCount {
+		if err := s.storage.DeleteChunkedMessage(ctx, session, eventContent.MessageID); err != nil {
+			err = fmt.Errorf("failed to delete chunked message: %w", err)
+			s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+			return false, err
+		}
+	} else {
+		if err := s.storage.UpdateChunksCount(ctx, session, eventContent.MessageID, newChunksCount); err != nil {
+			err = fmt.Errorf("failed to update chunks count: %w", err)
+			s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+			return false, err
+		}
+	}
+	return false, s.storage.Commit(session)
 }
 
 // TODO @evlekht implement (next ticket) // persist with db, make it durable? not just call it from event receiver?
 func (s *service) banUser(_ context.Context, _ id.UserID) error {
-	return nil
-}
-
-func verifyMetadata(m metadata.Metadata) error {
-	if m.RequestID == "" {
-		return fmt.Errorf("request id is empty")
-	}
-	if len(m.Cheques) == 0 {
-		return fmt.Errorf("no cheques")
-	}
-	if m.NumberOfChunks == 0 {
-		return fmt.Errorf("number of chunks is zero")
-	}
-	if m.ChunkIndex >= m.NumberOfChunks {
-		return fmt.Errorf("chunk index %d is greater than number of chunks %d", m.ChunkIndex, m.NumberOfChunks)
-	}
-	// TODO @evlekht do we need to verify sender cm account?
-	// TODO verify cheque signer bot with this cm account later (maybe already verified in cheque verification)?
-	// TODO verify cheque from cm account to be equal to message metadata? should cmb verify this as well?
 	return nil
 }

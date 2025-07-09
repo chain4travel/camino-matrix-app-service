@@ -13,10 +13,36 @@ type Storage interface {
 }
 
 type MessageChunksStorage interface {
-	GetChunksNumbers(ctx context.Context, session Session, messageID string) (storedChunksNumber uint64, expectedChunksNumber uint64, err error)
-	InsertChunkedMessage(ctx context.Context, session Session, messageID string, chunksNumber uint64) error
-	AddMessageChunk(ctx context.Context, session Session, messageID string) error
-	DeleteChunkedMessage(ctx context.Context, session Session, messageID string) error
+	GetChunksCount(
+		ctx context.Context,
+		session Session,
+		messageID string,
+	) (
+		storedChunksCount uint32,
+		expectedChunksCount uint32,
+		err error,
+	)
+
+	AddFirstChunk(
+		ctx context.Context,
+		session Session,
+		messageID string,
+		expectedChunksCount uint32,
+		storedChunksCount uint32,
+	) error
+
+	UpdateChunksCount(
+		ctx context.Context,
+		session Session,
+		messageID string,
+		storedChunksCount uint32,
+	) error
+
+	DeleteChunkedMessage(
+		ctx context.Context,
+		session Session,
+		messageID string,
+	) error
 }
 
 type SessionHandler interface {

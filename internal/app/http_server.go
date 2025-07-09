@@ -5,6 +5,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -17,9 +18,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const putTransactionsTxnIDParam = "txnId"
+
 // TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
 
-func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
+func newServer(logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
 	ginRouter := gin.New()
 	s := &server{
 		logger: logger,
@@ -36,7 +39,7 @@ func newServer(_ context.Context, logger *zap.SugaredLogger, hsAccessToken strin
 	s.gin.Use(middlewareRecover(logger))
 	s.gin.Use(middlewareBearerAuth(hsAccessToken))
 
-	s.gin.PUT("/_matrix/app/v1/transactions/:txnId", s.putTransactions)
+	s.gin.PUT(fmt.Sprintf("/_matrix/app/v1/transactions/:%s", putTransactionsTxnIDParam), s.putTransactions)
 	s.gin.POST("/_matrix/app/v1/ping", s.ping)
 
 	return s
@@ -49,9 +52,26 @@ type server struct {
 	service    service.Service
 }
 
-func (s *server) Start(_ context.Context) error {
-	s.logger.Infof("Started HTTP server on %s", s.httpServer.Addr)
-	return s.httpServer.ListenAndServe()
+func (s *server) Start() chan error {
+	errChan := make(chan error)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("HTTP server panicked: %v", r)
+				s.logger.Errorf("recovered from panic: %v", err)
+				errChan <- err
+			}
+			close(errChan)
+		}()
+
+		s.logger.Infof("HTTP server listen and serve on %s", s.httpServer.Addr)
+
+		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
+			s.logger.Errorf("HTTP server stopped listen and serve with error: %w", err)
+			errChan <- err
+		}
+	}()
+	return errChan
 }
 
 func (s *server) Stop(ctx context.Context) error {
@@ -73,7 +93,7 @@ func (s *server) putTransactions(c *gin.Context) {
 	}
 
 	if err := s.service.ProcessEvents(c.Request.Context(), reqBody.Events); err != nil {
-		s.logger.Errorf("failed to process events: %v", err) // TODO @evlekht add transaction ID to log
+		s.logger.Errorf("failed to process events (txID %s): %v", c.Param(putTransactionsTxnIDParam), err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err})
 		return
 	}
