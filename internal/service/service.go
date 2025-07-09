@@ -87,7 +87,7 @@ func (s *service) processMessageEvent(ctx context.Context, event *event.Event) (
 
 	if err := event.Content.ParseRaw(event.Type); err != nil {
 		s.logger.Errorf("Failed to parse event content: %v", err)
-		// TODO@ ban users for malformed events? e.g. we fail to parse? might be server/lib fault, though it shouldn't just pop up out of nowhere
+		// TODO @evlekht ban users for malformed events? e.g. we fail to parse? might be server/lib fault, though it shouldn't just pop up out of nowhere
 		return false, err
 	}
 

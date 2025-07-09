@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
+	"github.com/chain4travel/camino-messenger-bot/v11/pkg/database/sqlite"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -24,7 +25,7 @@ type chunkedMessage struct {
 }
 
 func (s *storage) GetChunksCount(ctx context.Context, session service.Session, messageID string) (uint32, uint32, error) {
-	tx, err := getSQLXTx(session)
+	tx, err := sqlite.GetSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return 0, 0, err
@@ -41,7 +42,7 @@ func (s *storage) GetChunksCount(ctx context.Context, session service.Session, m
 }
 
 func (s *storage) AddFirstChunk(ctx context.Context, session service.Session, messageID string, expectedChunksCount, storedChunksCount uint32) error {
-	tx, err := getSQLXTx(session)
+	tx, err := sqlite.GetSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
@@ -66,13 +67,16 @@ func (s *storage) AddFirstChunk(ctx context.Context, session service.Session, me
 }
 
 func (s *storage) UpdateChunksCount(ctx context.Context, session service.Session, messageID string, storedChunksCount uint32) error {
-	tx, err := getSQLXTx(session)
+	tx, err := sqlite.GetSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err
 	}
 
-	result, err := tx.NamedStmtContext(ctx, s.upsertChunksCount).ExecContext(ctx, messageID)
+	result, err := tx.NamedStmtContext(ctx, s.upsertFirstChunk).ExecContext(ctx, chunkedMessage{
+		MessageID:         messageID,
+		StoredChunksCount: storedChunksCount,
+	})
 	if err != nil {
 		s.base.Logger.Error(err)
 		return upgradeError(err)
@@ -87,7 +91,7 @@ func (s *storage) UpdateChunksCount(ctx context.Context, session service.Session
 }
 
 func (s *storage) DeleteChunkedMessage(ctx context.Context, session service.Session, messageID string) error {
-	tx, err := getSQLXTx(session)
+	tx, err := sqlite.GetSQLXTx(session)
 	if err != nil {
 		s.base.Logger.Error(err)
 		return err

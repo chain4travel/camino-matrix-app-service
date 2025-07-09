@@ -134,7 +134,7 @@ func (a *App) Run(ctx context.Context) error {
 	cashInStatusCheckDone := make(chan struct{})
 	schedulerStarted := make(chan struct{})
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		a.logger.Info("Starting start-up cash-in status check...")
 		if err := a.chequeHandler.CheckCashInStatus(ctx); err != nil {
 			return fmt.Errorf("failed to do start-up cash-in status check: %w", err)
@@ -144,7 +144,7 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		if !awaitChan(ctx, cashInStatusCheckDone) {
 			return nil
 		}
@@ -170,7 +170,7 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		if !awaitChans(ctx,
 			cashInStatusCheckDone,
 			schedulerStarted,
@@ -178,12 +178,12 @@ func (a *App) Run(ctx context.Context) error {
 			return nil
 		}
 
-		a.logger.Info("Starting http server...")
+		a.logger.Info("Starting HTTP server...")
 		errChan := a.httpServer.Start()
-		a.logger.Info("http server started.")
+		a.logger.Info("HTTP server started.")
 
 		if err := <-errChan; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, http.ErrServerClosed) {
-			a.logger.Errorf("http server stopped with error: %v", err)
+			a.logger.Errorf("HTTP server stopped with error: %v", err)
 			return err
 		}
 		return nil
@@ -191,10 +191,10 @@ func (a *App) Run(ctx context.Context) error {
 
 	// stop
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		<-ctx.Done()
 		a.logger.Debug("Stopping HTTP server...")
-		// we use background context, because we want to try to shutdown http server gracefully regardless
+		// we use background context, because we want to try to shutdown HTTP server gracefully regardless
 		if err := a.httpServer.Stop(context.Background()); err != nil && !errors.Is(err, context.Canceled) {
 			a.logger.Errorf("Failed to stop HTTP server: %v", err)
 			return fmt.Errorf("failed to stop HTTP server: %w", err)
@@ -203,7 +203,7 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		<-ctx.Done()
 		a.logger.Debug("Closing storage...")
 		if err := a.storage.Close(); err != nil {
@@ -214,7 +214,7 @@ func (a *App) Run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error {
+	a.safeGo(g, func() error {
 		<-ctx.Done()
 		a.logger.Debug("Stopping scheduler...")
 		a.scheduler.Stop()
@@ -229,6 +229,18 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func (a *App) safeGo(g *errgroup.Group, fn func() error) {
+	g.Go(func() (err error) {
+		defer func() {
+			if panicErr := recover(); panicErr != nil {
+				err = fmt.Errorf("panic: %v", panicErr) // err will be returned
+				a.logger.Errorf("recovered from panic: %v", err)
+			}
+		}()
+		return fn()
+	})
 }
 
 func awaitChan(ctx context.Context, ch <-chan struct{}) bool {

@@ -18,6 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const putTransactionsTxnIdParam = "txnId"
+
 // TODO@ [GIN-debug] [WARNING] Headers were already written. Wanted to override status code 200 with 401
 
 func newServer(logger *zap.SugaredLogger, hsAccessToken string, port uint64, service service.Service) *server {
@@ -37,7 +39,7 @@ func newServer(logger *zap.SugaredLogger, hsAccessToken string, port uint64, ser
 	s.gin.Use(middlewareRecover(logger))
 	s.gin.Use(middlewareBearerAuth(hsAccessToken))
 
-	s.gin.PUT("/_matrix/app/v1/transactions/:txnId", s.putTransactions)
+	s.gin.PUT(fmt.Sprintf("/_matrix/app/v1/transactions/:%s", putTransactionsTxnIdParam), s.putTransactions)
 	s.gin.POST("/_matrix/app/v1/ping", s.ping)
 
 	return s
@@ -91,7 +93,7 @@ func (s *server) putTransactions(c *gin.Context) {
 	}
 
 	if err := s.service.ProcessEvents(c.Request.Context(), reqBody.Events); err != nil {
-		s.logger.Errorf("failed to process events: %v", err) // TODO @evlekht add transaction ID to log
+		s.logger.Errorf("failed to process events (txID %s): %v", c.Param(putTransactionsTxnIdParam), err)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": err})
 		return
 	}
