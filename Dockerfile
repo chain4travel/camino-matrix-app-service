@@ -1,7 +1,7 @@
 ###
 ### Stage 0: builder
 ###
-FROM golang:1.23.9-alpine AS builder
+FROM golang:1.24.9-alpine AS builder
 RUN apk update && apk upgrade && apk add build-base
 WORKDIR /camino-matrix-app-service
 
