@@ -61,6 +61,7 @@ func NewApp(ctx context.Context, logger *zap.SugaredLogger, cfg *config.Config) 
 	}
 
 	chequeHandler, err := chequehandler.NewChequeHandler(
+		ctx,
 		logger,
 		ethClient,
 		cfg.NetworkFeeRecipientBotKey,
