@@ -131,7 +131,7 @@ func (s *service) processSignedMessageEvent(ctx context.Context, eventContent *m
 	}
 
 	storedChunksCount, _, err := s.storage.GetChunksCount(ctx, session, eventContent.MessageID)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		err = fmt.Errorf("failed to get chunks count: %w", err)
 		s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
 		return false, err
