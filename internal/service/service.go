@@ -10,9 +10,9 @@ import (
 	"math/big"
 
 	"github.com/chain4travel/camino-matrix-app-service/config"
-	"github.com/chain4travel/camino-messenger-bot/v11/pkg/chequehandler"
-	cmaccounts "github.com/chain4travel/camino-messenger-bot/v11/pkg/cm_accounts"
-	"github.com/chain4travel/camino-messenger-bot/v11/pkg/matrix"
+	"github.com/chain4travel/camino-messenger-bot/v12/pkg/chequehandler"
+	cmaccounts "github.com/chain4travel/camino-messenger-bot/v12/pkg/cm_accounts"
+	"github.com/chain4travel/camino-messenger-bot/v12/pkg/matrix"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
@@ -120,7 +120,7 @@ func (s *service) processSignedMessageEvent(ctx context.Context, eventContent *m
 	}
 	defer s.storage.Abort(session)
 
-	if err := s.chequeHandler.VerifyCheque(
+	if err := s.chequeHandler.VerifyAndStoreCheque(
 		ctx,
 		&eventContent.NetworkFeeCheque,
 		matrix.AddressFromUserID(senderBotUserID),

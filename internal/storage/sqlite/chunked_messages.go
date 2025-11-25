@@ -10,7 +10,7 @@ import (
 	"fmt"
 
 	"github.com/chain4travel/camino-matrix-app-service/internal/service"
-	"github.com/chain4travel/camino-messenger-bot/v11/pkg/database/sqlite"
+	"github.com/chain4travel/camino-messenger-bot/v12/pkg/database/sqlite"
 	"github.com/jmoiron/sqlx"
 )
 
