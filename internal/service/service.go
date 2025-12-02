@@ -145,10 +145,12 @@ func (s *service) processSignedMessageEvent(ctx context.Context, eventContent *m
 	}
 
 	if newChunksCount == eventContent.ChunksCount {
-		if err := s.storage.DeleteChunkedMessage(ctx, session, eventContent.MessageID); err != nil {
-			err = fmt.Errorf("failed to delete chunked message: %w", err)
-			s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
-			return false, err
+		if newChunksCount > 1 { // more than one chunk -> delete chunked message record from db
+			if err := s.storage.DeleteChunkedMessage(ctx, session, eventContent.MessageID); err != nil {
+				err = fmt.Errorf("failed to delete chunked message: %w", err)
+				s.logger.Errorf("Event %s, message %s: %v", eventID, eventContent.MessageID, err)
+				return false, err
+			}
 		}
 	} else {
 		if err := s.storage.AddFirstChunk(ctx, session, eventContent.MessageID, eventContent.ChunksCount, newChunksCount); err != nil {
