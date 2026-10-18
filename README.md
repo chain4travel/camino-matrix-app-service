@@ -1,3 +1,5 @@
+> **Development continues at Travel Token Marketplace.** Chain4Travel built Camino Messenger, the B2B transactional distribution layer for travel: connect once, book everywhere. This repository is kept as its original source. Active development: [TravelTokenMarketplace/travel-token-matrix-app-service](https://github.com/TravelTokenMarketplace/travel-token-matrix-app-service).
+
 ## Docker
 Build docker with:
 ```
